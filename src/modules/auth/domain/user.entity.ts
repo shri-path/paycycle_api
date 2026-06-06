@@ -1,4 +1,5 @@
-import { PhoneNumber, ArgumentInvalidException } from './value-objects/phone-number.value-object';
+import { PhoneNumber } from './value-objects/phone-number.value-object';
+import { ArgumentInvalidException } from '@/common/errors/app-error';
 import { HashedPassword } from './value-objects/hashed-password.value-object';
 import { UserProps, CreateUserProps, ReconstituteUserData } from './user.types';
 import { UserRegisteredEvent } from './events/user-registered.domain-event';

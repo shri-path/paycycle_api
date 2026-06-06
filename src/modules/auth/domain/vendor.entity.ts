@@ -1,6 +1,6 @@
 import { VendorProps, CreateVendorProps, ReconstituteVendorData } from './vendor.types';
 import { VendorCreatedEvent } from './events/vendor-created.domain-event';
-import { ArgumentInvalidException } from './value-objects/phone-number.value-object';
+import { ArgumentInvalidException } from '@/common/errors/app-error';
 
 type DomainEvent = VendorCreatedEvent;
 

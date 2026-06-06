@@ -1,3 +1,11 @@
+export class ArgumentInvalidException extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ArgumentInvalidException';
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
 export class AppError extends Error {
   public readonly statusCode: number;
   public readonly code: string;

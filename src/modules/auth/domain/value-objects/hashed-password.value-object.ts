@@ -1,4 +1,4 @@
-import { ArgumentInvalidException } from './phone-number.value-object';
+import { ArgumentInvalidException } from '@/common/errors/app-error';
 
 // bcrypt output is always exactly 60 characters
 const MIN_BCRYPT_LENGTH = 60;

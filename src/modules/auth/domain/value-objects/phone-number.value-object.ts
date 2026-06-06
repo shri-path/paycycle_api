@@ -1,11 +1,8 @@
-const PHONE_REGEX = /^\+?[1-9][0-9]{7,14}$/;
+import { ArgumentInvalidException } from '@/common/errors/app-error';
 
-export class ArgumentInvalidException extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ArgumentInvalidException';
-  }
-}
+export { ArgumentInvalidException };
+
+const PHONE_REGEX = /^\+?[1-9][0-9]{7,14}$/;
 
 export class PhoneNumber {
   private readonly _value: string;
