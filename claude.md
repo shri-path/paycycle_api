@@ -2,8 +2,7 @@
 
 **Enterprise-grade REST API** built with Node.js, Express, TypeScript, and PostgreSQL featuring JWT authentication, RBAC, dynamic query building, and comprehensive testing.
 
-> 🤖 **Working as part of the agent team?** See [AGENTS.md](AGENTS.md) for the
-> Architect → Dev → Review → QA pipeline, handoff artifacts, and the skills catalog.
+> 🤖 **Working as part of the agent team?** Read `.claude/memory/MEMORY.md` first for standing decisions and context, then see [AGENTS.md](AGENTS.md) for the Architect → Dev → Review → QA pipeline, handoff artifacts, and the skills catalog.
 
 ## Quick Start
 

@@ -275,7 +275,11 @@ When given a feature to implement:
 2. Read `docs/features/[feature-name]/FEATURE_PLAN.md` for the full design
 3. Read `docs/features/[feature-name]/FEATURE_TASKS.md` for ordered tasks with skill references
 4. Read `docs/features/[feature-name]/DOMAIN_MODEL.md` for DDD patterns (if exists)
-5. Read existing modules under `src/modules/` as reference for patterns (if any exist)
+5. Read the relevant user story from `../project_documents/vendor_app/user_stories/` for acceptance criteria
+6. Check `../project_documents/vendor_app/features/` for any supplementary feature specs
+7. Check `../project_documents/vendor_app/wireframes/` for UI contracts and expected response shapes
+8. Read the relevant SQL module(s) from `../project_documents/db-design/` — your Prisma schema must match the approved design; **update the SQL file if you make approved deviations**
+9. Read existing modules under `src/modules/` as reference for patterns (if any exist)
 6. **Read the skill referenced in each task** before implementing that layer
 7. Implement tasks in order, one at a time, following the skill for each layer
 8. Run `npm run lint` and `npm run build` after each major file

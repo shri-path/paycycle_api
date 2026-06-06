@@ -260,7 +260,10 @@ When given a feature to test:
 2. Read `docs/features/[feature-name]/FEATURE_PLAN.md` — understand every endpoint, rule, and edge case
 3. Read `docs/features/[feature-name]/DOMAIN_MODEL.md` — understand entity invariants and state transitions
 4. Read `docs/features/[feature-name]/FEATURE_TASKS.md` — know what was implemented
-5. **Read `testing-strategy.md` skill** — follow its templates and patterns
+5. Read the relevant user story from `../project_documents/vendor_app/user_stories/` — derive acceptance test cases from the story's acceptance criteria
+6. Check `../project_documents/vendor_app/features/` for supplementary feature specs and business rules to test against
+7. Check `../project_documents/vendor_app/wireframes/` — verify API responses match the data shapes the wireframes imply
+8. **Read `testing-strategy.md` skill** — follow its templates and patterns
 6. **Read `error-handling.md` skill** — understand expected error codes and formats
 7. Ensure the server is running (`npm run dev`)
 8. Start with happy path tests for each endpoint

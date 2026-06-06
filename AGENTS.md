@@ -129,9 +129,27 @@ before** the corresponding activity.
 
 ---
 
+## Project document locations
+
+| Resource            | Path                                                                 |
+| ------------------- | -------------------------------------------------------------------- |
+| User stories        | `../project_documents/vendor_app/user_stories/`                     |
+| Feature specs       | `../project_documents/vendor_app/features/`                         |
+| Wireframes          | `../project_documents/vendor_app/wireframes/`                       |
+| Progress tracker    | `../project_documents/vendor_app/PROGRESS_TRACKER.md`               |
+
+All agents must consult these resources at the start of every user story task:
+- **User story** — acceptance criteria, scope, and constraints for the feature
+- **Feature spec** — detailed requirements and business rules (if present)
+- **Wireframes** — UI contract; use to verify API response shapes match what the frontend expects
+- **Progress tracker** — status updates; move stories In Progress → Completed as work advances
+
+---
+
 ## Ground rules for any agent
 
 - **Read memory first** — start every task with `.claude/memory/MEMORY.md`; its entries override defaults. Record durable new decisions there.
+- **Read project documents** — consult the user story, feature spec, and wireframes from the table above before designing, implementing, reviewing, or testing.
 - **Stay in your lane** — respect each agent's boundary above.
 - **Read the skill first** — never implement/design/review an activity without its skill.
 - **ARCHITECTURE.md is reference, not law** — use it for infrastructure facts only, never for design or coding style.

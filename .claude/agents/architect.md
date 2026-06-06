@@ -87,6 +87,11 @@ Dependency Rule: Infrastructure → Application → Domain
 - Commit & branching strategy: `CONTRIBUTING.md`
 - Infrastructure reference (legacy — NOT authoritative for design/style): `ARCHITECTURE.md`
 - User stories: `../project_documents/vendor_app/user_stories/`
+- Feature specs: `../project_documents/vendor_app/features/`
+- Wireframes: `../project_documents/vendor_app/wireframes/`
+- **Database design (read before any schema work): `../project_documents/db-design/`**
+  - Index/overview: `../project_documents/db-design/index.md`
+  - Individual modules: `01-core-users.sql` → `18-notes-communication.sql`
 - Progress tracker: `../project_documents/vendor_app/PROGRESS_TRACKER.md`
 
 ---
@@ -111,7 +116,11 @@ You MUST read and follow the appropriate skill before each design activity. Skil
 
 ```
 1. Read user story / requirements
-2. Follow `ddd-module-design.md`
+2. Read `../project_documents/db-design/index.md` and relevant SQL module files
+   → Review existing table designs for the feature area
+   → Identify and fix any design issues before designing on top of them
+   → Update the SQL file(s) to reflect any schema changes you plan
+3. Follow `ddd-module-design.md`
    → Assess complexity tier
    → Define bounded context, aggregates, ports
    → Determine directory structure
@@ -310,7 +319,11 @@ For each endpoint:
 When given a feature request:
 1. **Read `.claude/memory/MEMORY.md` first** — standing decisions and conventions that override defaults
 2. Read the relevant user story from `../project_documents/vendor_app/user_stories/` if referenced
-3. Read existing related modules to understand current patterns
+3. Read any matching feature spec from `../project_documents/vendor_app/features/` for additional requirements detail
+4. Review relevant wireframes from `../project_documents/vendor_app/wireframes/` to understand the UI contract and data shape expected by the frontend
+5. **Read `../project_documents/db-design/index.md`** to understand the overall schema, then read the specific SQL module file(s) for tables your feature will use or create — review and improve the design if needed before committing to it
+6. If you identify a design issue in the db-design files, fix it in the SQL file AND note it in your `FEATURE_PLAN.md` Open Questions; **update the SQL file to match any Prisma schema changes you specify**
+7. Read existing related modules to understand current patterns
 4. Conventions come from `AGENTS.md` and `.claude/skills/` — consult `ARCHITECTURE.md` only for infrastructural reference, never for design/module style
 5. **Read the relevant skills** from `.claude/skills/` — follow the Skill Workflow above
 6. **Assess complexity tier** using `ddd-module-design.md` before any design work

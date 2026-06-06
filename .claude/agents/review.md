@@ -237,7 +237,10 @@ When given a feature to review:
 1. **Read `.claude/memory/MEMORY.md` first** — standing decisions and conventions that override defaults
 2. Read `docs/features/[feature-name]/FEATURE_PLAN.md` — understand the design intent and complexity tier
 3. Read `docs/features/[feature-name]/DOMAIN_MODEL.md` — understand domain model (if exists)
-4. **Read ALL relevant skills** from `.claude/skills/` — these are your review standards:
+4. Read the relevant user story from `../project_documents/vendor_app/user_stories/` for acceptance criteria to validate against
+5. Check `../project_documents/vendor_app/features/` for supplementary requirements that must be met
+6. Check `../project_documents/vendor_app/wireframes/` to verify response shapes match what the frontend expects
+7. **Read ALL relevant skills** from `.claude/skills/` — these are your review standards:
    - Always read: `module-scaffold.md`, `error-handling.md`
    - For schema changes: `prisma-schema-design.md`
    - For domain logic: `domain-modeling.md`
