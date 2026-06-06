@@ -1,0 +1,18 @@
+echo "🔍 [1/2] Linting all chunks..."
+if ! npm run lint; then
+  echo "❌ Lint failed. Commit aborted — fix the issues above (try: npm run lint:fix)."
+  exit 1
+fi
+
+# tsc fails with TS18003 when there are zero source files; skip build until src has code.
+if find src -name '*.ts' 2>/dev/null | grep -q .; then
+  echo "🏗️  [2/2] Building project..."
+  if ! npm run build; then
+    echo "❌ Build failed. Commit aborted — fix the type/build errors above."
+    exit 1
+  fi
+else
+  echo "🏗️  [2/2] No source files in src/ yet — skipping build."
+fi
+
+echo "✅ Lint + build clean. Proceeding with commit."
