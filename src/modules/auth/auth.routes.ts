@@ -97,7 +97,12 @@ const loginService = new LoginService(
   logger
 );
 
-const refreshTokenService = new RefreshTokenService(sessionRepository, logger);
+const refreshTokenService = new RefreshTokenService(
+  sessionRepository,
+  userRepository,
+  vendorUserRepository,
+  logger
+);
 
 const forgotPasswordService = new ForgotPasswordService(
   userRepository,

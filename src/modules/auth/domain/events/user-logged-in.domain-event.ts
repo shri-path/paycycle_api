@@ -1,4 +1,6 @@
-export class UserLoggedInEvent {
+import { DomainEventBase, DomainEventMetadata } from './domain-event.base';
+
+export class UserLoggedInEvent extends DomainEventBase {
   readonly type = 'UserLoggedInEvent';
 
   constructor(
@@ -6,7 +8,12 @@ export class UserLoggedInEvent {
     public readonly phone: string,
     public readonly ip: string | undefined,
     public readonly userAgent: string | undefined,
-    public readonly correlationId: string,
-    public readonly timestamp: Date = new Date()
-  ) {}
+    correlationId: string,
+    causationId?: string
+  ) {
+    const metadata: DomainEventMetadata = causationId
+      ? { correlationId, causationId }
+      : { correlationId };
+    super(userId.toString(), metadata);
+  }
 }

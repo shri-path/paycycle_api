@@ -2,7 +2,8 @@ import crypto from 'crypto';
 import { Logger } from '@/infrastructure/logger/logger';
 import { AppError, InternalServerError, UnauthorizedError } from '@/common/errors/app-error';
 import { prisma, PrismaTransaction } from '@/infrastructure/database/prisma.client';
-import { SessionRepository } from '../../database/session.repository';
+import { IUserRepository } from '../../database/user.repository.port';
+import { SessionRepository, VendorUserRepository } from '../../database/session.repository';
 import { jwtUtil } from '../../utils/jwt.util';
 import { RefreshResponseDto } from '../../auth.types';
 import { RefreshTokenRequestDto } from './refresh-token.request.dto';
@@ -10,6 +11,8 @@ import { RefreshTokenRequestDto } from './refresh-token.request.dto';
 export class RefreshTokenService {
   constructor(
     private readonly sessionRepository: SessionRepository,
+    private readonly userRepository: IUserRepository,
+    private readonly vendorUserRepository: VendorUserRepository,
     private readonly logger: Logger
   ) {}
 
@@ -19,21 +22,32 @@ export class RefreshTokenService {
     // 1. Verify JWT signature
     const payload = jwtUtil.verifyRefreshToken(dto.refreshToken);
 
-    // 2. Find active session
+    // 2. Find active session — findByRefreshToken filters revokedAt IS NULL
     const session = await this.sessionRepository.findByRefreshToken(dto.refreshToken);
-    if (!session || session.revokedAt !== null) {
+    if (!session) {
       this.logger.warn({ userId: payload.userId }, 'RefreshTokenService: token reuse or not found');
       throw new UnauthorizedError('Invalid or revoked refresh token');
     }
 
-    // 3. Rotate: revoke old, create new
+    // 3. Load user and vendor contexts so access token carries valid claims
+    const userId = BigInt(payload.userId);
+    const user = await this.userRepository.findById(userId);
+    if (!user || user.deletedAt !== null) {
+      this.logger.warn({ userId: payload.userId }, 'RefreshTokenService: user no longer exists');
+      throw new UnauthorizedError('User no longer exists');
+    }
+
+    const contexts = await this.vendorUserRepository.findActiveContextsByUserId(userId);
+    const vendorIds = contexts.map((c) => c.vendorId.toString());
+
+    // 4. Rotate: revoke old, create new
     const newSessionId = crypto.randomUUID();
     const refreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
     const newAccessToken = jwtUtil.generateAccessToken({
       userId: payload.userId,
-      phone: '', // phone not in refresh payload — will be re-read if needed
-      vendorIds: [],
+      phone: user.phone,
+      vendorIds,
     });
 
     const newRefreshToken = jwtUtil.generateRefreshToken({

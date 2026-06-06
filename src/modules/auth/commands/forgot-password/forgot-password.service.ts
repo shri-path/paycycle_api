@@ -27,7 +27,7 @@ export class ForgotPasswordService {
     }
 
     // Generate 6-digit OTP and reset token
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otp = crypto.randomInt(100000, 1000000).toString();
     const resetToken = crypto.randomUUID();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 

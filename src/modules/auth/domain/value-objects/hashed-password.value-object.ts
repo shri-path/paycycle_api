@@ -27,4 +27,13 @@ export class HashedPassword {
   unpack(): string {
     return this._value;
   }
+
+  /**
+   * Structural equality by hash string comparison.
+   * Note: identical passwords produce different bcrypt hashes — use bcrypt.compare() for
+   * actual password verification; this method is for value-object identity only.
+   */
+  equals(other: HashedPassword): boolean {
+    return this._value === other._value;
+  }
 }

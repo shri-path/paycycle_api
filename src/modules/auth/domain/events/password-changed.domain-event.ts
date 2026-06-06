@@ -1,9 +1,16 @@
-export class PasswordChangedEvent {
+import { DomainEventBase, DomainEventMetadata } from './domain-event.base';
+
+export class PasswordChangedEvent extends DomainEventBase {
   readonly type = 'PasswordChangedEvent';
 
   constructor(
     public readonly userId: bigint,
-    public readonly correlationId: string,
-    public readonly timestamp: Date = new Date()
-  ) {}
+    correlationId: string,
+    causationId?: string
+  ) {
+    const metadata: DomainEventMetadata = causationId
+      ? { correlationId, causationId }
+      : { correlationId };
+    super(userId.toString(), metadata);
+  }
 }

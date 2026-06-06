@@ -22,13 +22,18 @@ export class VendorEntity {
     return this._id;
   }
 
-  getProps(): VendorProps & { id: bigint; createdAt: Date; updatedAt: Date } {
-    return {
+  getProps(): Readonly<VendorProps & { id: bigint; createdAt: Date; updatedAt: Date }> {
+    return Object.freeze({
       id: this._id,
       createdAt: this._createdAt,
       updatedAt: this._updatedAt,
       ...this._props,
-    };
+    });
+  }
+
+  equals(other?: VendorEntity): boolean {
+    if (!other) return false;
+    return this._id === other._id;
   }
 
   getDomainEvents(): DomainEvent[] {

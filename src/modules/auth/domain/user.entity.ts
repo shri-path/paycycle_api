@@ -35,13 +35,18 @@ export class UserEntity {
     return this._updatedAt;
   }
 
-  getProps(): UserProps & { id: bigint; createdAt: Date; updatedAt: Date } {
-    return {
+  getProps(): Readonly<UserProps & { id: bigint; createdAt: Date; updatedAt: Date }> {
+    return Object.freeze({
       id: this._id,
       createdAt: this._createdAt,
       updatedAt: this._updatedAt,
       ...this._props,
-    };
+    });
+  }
+
+  equals(other?: UserEntity): boolean {
+    if (!other) return false;
+    return this._id === other._id;
   }
 
   getDomainEvents(): DomainEvent[] {
