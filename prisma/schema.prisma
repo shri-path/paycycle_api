@@ -1,0 +1,260 @@
+// Prisma Schema for PayCycle API
+// Based on db-design SQLs in project_documents/db-design/
+// Database: PostgreSQL 14+
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// MODULE 01: CORE USERS
+// =============================================================================
+
+model User {
+  id BigInt @id @default(autoincrement())
+
+  phone        String @unique @db.VarChar(15)
+  passwordHash String @map("password_hash") @db.VarChar(255)
+
+  name            String? @db.VarChar(100)
+  email           String? @db.VarChar(100)
+  profilePhotoUrl String? @map("profile_photo_url") @db.VarChar(500)
+
+  preferredLanguage String @default("en") @map("preferred_language") @db.VarChar(10)
+
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  deletedAt   DateTime? @map("deleted_at")
+
+  sessions        UserSession[]
+  passwordResets  PasswordResetToken[]
+  vendorUsers     VendorUser[]
+  auditLogs       AuditLog[]
+
+  @@index([phone])
+  @@index([email])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@map("users")
+}
+
+model UserSession {
+  id BigInt @id @default(autoincrement())
+
+  userId       BigInt  @map("user_id")
+  accessToken  String? @map("access_token") @db.VarChar(500)
+  refreshToken String? @map("refresh_token") @db.VarChar(500)
+  deviceId     String? @map("device_id") @db.VarChar(100)
+  deviceName   String? @map("device_name") @db.VarChar(200)
+  ipAddress    String? @map("ip_address") @db.VarChar(45)
+  userAgent    String? @map("user_agent") @db.Text
+
+  lastActivityAt DateTime  @default(now()) @map("last_activity_at")
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@index([expiresAt])
+  @@index([lastActivityAt])
+  @@map("user_sessions")
+}
+
+model PasswordResetToken {
+  id BigInt @id @default(autoincrement())
+
+  userId     BigInt @map("user_id")
+  resetToken String @unique @map("reset_token") @db.VarChar(255)
+  otpCode    String @map("otp_code") @db.VarChar(6)
+  isUsed     Boolean   @default(false) @map("is_used")
+  usedAt     DateTime? @map("used_at")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([resetToken])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
+}
+
+// =============================================================================
+// MODULE 02: VENDORS
+// =============================================================================
+
+model Vendor {
+  id BigInt @id @default(autoincrement())
+
+  name     String  @db.VarChar(150)
+  phone    String? @db.VarChar(15)
+  category String? @db.VarChar(50)
+
+  referralCode       String? @unique @map("referral_code") @db.VarChar(50)
+  referredByVendorId BigInt? @map("referred_by_vendor_id")
+
+  autoMarkEnabled Boolean @default(true) @map("auto_mark_enabled")
+  autoSendBills   Boolean @default(false) @map("auto_send_bills")
+  autoSendTime    String? @default("20:00") @map("auto_send_time") @db.VarChar(5)
+
+  upiId       String? @map("upi_id") @db.VarChar(100)
+  bankDetails Json?   @map("bank_details")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  referredBy  Vendor?    @relation("VendorReferrals", fields: [referredByVendorId], references: [id], onDelete: SetNull)
+  referrals   Vendor[]   @relation("VendorReferrals")
+  vendorUsers VendorUser[]
+  auditLogs   AuditLog[]
+
+  @@index([referralCode])
+  @@index([category])
+  @@index([phone])
+  @@index([referredByVendorId])
+  @@index([deletedAt])
+  @@map("vendors")
+}
+
+// =============================================================================
+// MODULE 12: STAFF MANAGEMENT & RBAC
+// =============================================================================
+
+model Role {
+  id BigInt @id @default(autoincrement())
+
+  name        String  @unique @db.VarChar(50)
+  displayName String  @map("display_name") @db.VarChar(100)
+  description String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendorUsers     VendorUser[]
+  rolePermissions RolePermission[]
+
+  @@index([name])
+  @@map("roles")
+}
+
+model Permission {
+  id BigInt @id @default(autoincrement())
+
+  name        String  @unique @db.VarChar(100)
+  resource    String  @db.VarChar(50)
+  action      String  @db.VarChar(50)
+  description String? @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[]
+
+  @@unique([resource, action])
+  @@index([resource])
+  @@index([action])
+  @@index([name])
+  @@map("permissions")
+}
+
+model RolePermission {
+  id BigInt @id @default(autoincrement())
+
+  roleId       BigInt @map("role_id")
+  permissionId BigInt @map("permission_id")
+  assignedAt   DateTime @default(now()) @map("assigned_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+enum VendorUserStatus {
+  INVITED
+  ACTIVE
+  DISABLED
+  REMOVED
+
+  @@map("vendor_user_status")
+}
+
+model VendorUser {
+  id BigInt @id @default(autoincrement())
+
+  vendorId BigInt @map("vendor_id")
+  userId   BigInt @map("user_id")
+  roleId   BigInt @map("role_id")
+  status   VendorUserStatus @default(ACTIVE)
+
+  phone          String? @db.VarChar(15)
+  areaRouteLabel String? @map("area_route_label") @db.VarChar(200)
+
+  invitedAt  DateTime? @map("invited_at")
+  joinedAt   DateTime? @map("joined_at")
+  disabledAt DateTime? @map("disabled_at")
+  removedAt  DateTime? @map("removed_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  @@unique([vendorId, userId])
+  @@index([vendorId])
+  @@index([userId])
+  @@index([roleId])
+  @@index([status])
+  @@index([deletedAt])
+  @@map("vendor_users")
+}
+
+// =============================================================================
+// AUDIT LOG (referenced by User and Vendor)
+// =============================================================================
+
+model AuditLog {
+  id BigInt @id @default(autoincrement())
+
+  vendorId          BigInt  @map("vendor_id")
+  performedByUserId BigInt? @map("performed_by_user_id")
+  performedByRole   String? @map("performed_by_role") @db.VarChar(50)
+
+  action     String  @db.VarChar(100)
+  entityType String? @map("entity_type") @db.VarChar(50)
+  entityId   BigInt? @map("entity_id")
+  metadata   Json?
+
+  ipAddress String? @map("ip_address") @db.VarChar(45)
+  userAgent String? @map("user_agent") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vendor          Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  performedByUser User?  @relation(fields: [performedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([vendorId])
+  @@index([performedByUserId])
+  @@index([createdAt])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@map("audit_logs")
+}
