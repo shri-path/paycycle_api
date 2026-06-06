@@ -112,21 +112,25 @@ async function seed() {
       },
     });
 
-    const testVendor = await prisma.vendor.create({
-      data: { name: 'Test Vendor' },
+    const existingVendorUser = await prisma.vendorUser.findFirst({
+      where: { userId: testUser.id },
     });
 
-    await prisma.vendorUser.upsert({
-      where: { vendorId_userId: { vendorId: testVendor.id, userId: testUser.id } },
-      update: {},
-      create: {
-        vendorId: testVendor.id,
-        userId: testUser.id,
-        roleId: vendorOwnerRole.id,
-        status: 'ACTIVE',
-        joinedAt: new Date(),
-      },
-    });
+    if (!existingVendorUser) {
+      const testVendor = await prisma.vendor.create({
+        data: { name: 'Test Vendor' },
+      });
+
+      await prisma.vendorUser.create({
+        data: {
+          vendorId: testVendor.id,
+          userId: testUser.id,
+          roleId: vendorOwnerRole.id,
+          status: 'ACTIVE',
+          joinedAt: new Date(),
+        },
+      });
+    }
 
     console.log('✓ Dev test user seeded: +919000000001 / Test@123');
   }

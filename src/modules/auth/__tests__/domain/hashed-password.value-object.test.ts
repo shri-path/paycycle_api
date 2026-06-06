@@ -1,5 +1,5 @@
 import { HashedPassword } from '../../domain/value-objects/hashed-password.value-object';
-import { ArgumentInvalidException } from '../../domain/value-objects/phone-number.value-object';
+import { ArgumentInvalidException } from '@/common/errors/app-error';
 
 // bcrypt hash example (60 chars)
 const VALID_BCRYPT_HASH = '$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012345';

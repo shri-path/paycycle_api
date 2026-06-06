@@ -1,7 +1,5 @@
-import {
-  PhoneNumber,
-  ArgumentInvalidException,
-} from '../../domain/value-objects/phone-number.value-object';
+import { PhoneNumber } from '../../domain/value-objects/phone-number.value-object';
+import { ArgumentInvalidException } from '@/common/errors/app-error';
 
 describe('PhoneNumber VO', () => {
   describe('valid phone numbers', () => {

@@ -85,6 +85,7 @@ export class UserEntity {
 
   static reconstitute(data: ReconstituteUserData): UserEntity {
     const entity = new UserEntity(data.id, data.createdAt, data.updatedAt, data.props);
+    entity.validate();
     return entity;
   }
 

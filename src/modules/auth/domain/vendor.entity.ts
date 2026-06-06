@@ -67,7 +67,9 @@ export class VendorEntity {
   }
 
   static reconstitute(data: ReconstituteVendorData): VendorEntity {
-    return new VendorEntity(data.id, data.createdAt, data.updatedAt, data.props);
+    const entity = new VendorEntity(data.id, data.createdAt, data.updatedAt, data.props);
+    entity.validate();
+    return entity;
   }
 
   emitCreatedEvent(ownerUserId: bigint, correlationId: string): void {

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
@@ -11,16 +12,23 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ): void => {
+  const correlationId = (req.headers['x-correlation-id'] as string) ?? crypto.randomUUID();
+
   logError(error, {
     path: req.path,
     method: req.method,
     userId: req.user?.userId?.toString(),
+    correlationId,
   });
 
   if (error instanceof AppError) {
+    const json = error.toJSON();
     res.status(error.statusCode).json({
       success: false,
-      error: error.toJSON(),
+      error: {
+        ...json,
+        correlationId,
+      },
     });
     return;
   }
@@ -31,6 +39,7 @@ export const errorHandler = (
       error: {
         code: 'VALIDATION_ERROR',
         message: 'Validation failed',
+        correlationId,
         details: error.errors.map((err) => ({
           field: err.path.join('.'),
           message: err.message,
@@ -47,6 +56,7 @@ export const errorHandler = (
       error: {
         code: prismaError.code,
         message: prismaError.message,
+        correlationId,
       },
     });
     return;
@@ -58,6 +68,7 @@ export const errorHandler = (
     error: {
       code: 'INTERNAL_SERVER_ERROR',
       message,
+      correlationId,
     },
   });
 };

@@ -1,7 +1,5 @@
 import { ArgumentInvalidException } from '@/common/errors/app-error';
 
-export { ArgumentInvalidException };
-
 const PHONE_REGEX = /^\+?[1-9][0-9]{7,14}$/;
 
 export class PhoneNumber {

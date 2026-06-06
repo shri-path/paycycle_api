@@ -186,9 +186,32 @@ describe('POST /api/v1/auth/refresh', () => {
     expect(res.body.data.refreshToken).toBeTruthy();
   });
 
+  it('401 — old refresh token rejected after rotation', async () => {
+    // Login fresh to get a token we fully control
+    const loginRes = await request(app).post('/api/v1/auth/login').send({
+      phone: TEST_PHONE,
+      password: 'Test@123x',
+    });
+    const originalToken = loginRes.body.data.tokens.refreshToken as string;
+
+    // First refresh — rotates the token
+    const firstRefresh = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: originalToken });
+    expect(firstRefresh.status).toBe(200);
+
+    // Second refresh with the now-rotated-out original token must be rejected
+    const secondRefresh = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: originalToken });
+    expect(secondRefresh.status).toBe(401);
+  });
+
   it('401 — invalid JWT string', async () => {
     const res = await request(app).post('/api/v1/auth/refresh').send({ refreshToken: 'invalid.jwt' });
     expect(res.status).toBe(401);
+    // BUG-008: correlationId must be present in every error response
+    expect(res.body.error.correlationId).toBeTruthy();
   });
 });
 

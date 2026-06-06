@@ -1,8 +1,6 @@
 import { UserEntity } from '../../domain/user.entity';
-import {
-  PhoneNumber,
-  ArgumentInvalidException,
-} from '../../domain/value-objects/phone-number.value-object';
+import { PhoneNumber } from '../../domain/value-objects/phone-number.value-object';
+import { ArgumentInvalidException } from '@/common/errors/app-error';
 import { HashedPassword } from '../../domain/value-objects/hashed-password.value-object';
 import { UserRegisteredEvent } from '../../domain/events/user-registered.domain-event';
 import { UserLoggedInEvent } from '../../domain/events/user-logged-in.domain-event';

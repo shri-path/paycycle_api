@@ -40,6 +40,8 @@ export const loginSchema = z
   .object({
     phone: phoneField,
     password: passwordField,
+    deviceId: z.string().max(100).optional(),
+    deviceName: z.string().max(200).optional(),
   })
   .strict();
 
