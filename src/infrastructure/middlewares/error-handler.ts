@@ -103,11 +103,13 @@ function handlePrismaError(error: Prisma.PrismaClientKnownRequestError): {
 }
 
 export const notFoundHandler = (req: Request, res: Response): void => {
+  const correlationId = (req.headers['x-correlation-id'] as string) ?? crypto.randomUUID();
   res.status(404).json({
     success: false,
     error: {
       code: 'NOT_FOUND',
       message: `Route ${req.method} ${req.path} not found`,
+      correlationId,
     },
   });
 };
