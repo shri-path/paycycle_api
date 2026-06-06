@@ -289,3 +289,32 @@ Based on `FEATURE_PLAN.md` and `FEATURE_TASKS.md`:
 | `UserEntity.equals()` present | PASS | MAJOR-2 fix confirmed |
 | `HashedPassword.equals()` present | PASS | MAJOR-3 fix confirmed |
 | All 71 existing tests pass | PASS | `npm test` → 71/71 |
+
+---
+
+## Bug Fix Verification
+
+**Date**: 2026-06-07
+**Verified by**: QA Agent
+**Branch**: feat/us-003-authentication
+
+| Bug | Status | Note |
+|-----|--------|------|
+| BUG-001 | ✅ Fixed | All 4 branches in `errorHandler` (`AppError`, `ZodError`, `PrismaClientKnownRequestError`, generic 500) now include `correlationId`. Verified in `error-handler.ts` lines 24-73. |
+| BUG-002 | ✅ Fixed | `hashed-password.value-object.test.ts` line 2 now imports `ArgumentInvalidException` directly from `@/common/errors/app-error`. |
+| BUG-003 | ✅ Fixed | `tests/integration/auth.test.ts` contains `401 — old refresh token rejected after rotation` test (line 189). Test passes: login → first refresh (gets new token) → second refresh with original token → 401. |
+| BUG-004 | ✅ Fixed | `loginSchema` in `auth.validator.ts` includes `deviceId: z.string().max(100).optional()` and `deviceName: z.string().max(200).optional()` (lines 43-44). Schema and service/controller are now consistent. |
+| BUG-005 | ✅ Fixed | `UserEntity.reconstitute()` calls `entity.validate()` at line 88 (`user.entity.ts`). `VendorEntity.reconstitute()` calls `entity.validate()` at line 71 (`vendor.entity.ts`). |
+| BUG-006 | ✅ Fixed | Vendor creation in `prisma/seeds/index.ts` is wrapped in an existence check (`findFirst` on `vendorUser` at line 115). Two sequential runs of `npm run db:seed` both complete cleanly with no duplicate vendor rows or errors. |
+| BUG-007 | ✅ Fixed | `phone-number.value-object.ts` no longer contains `export { ArgumentInvalidException }`. The file exports only the `PhoneNumber` class (confirmed lines 1-35). |
+
+### Additional Observations
+
+- **`notFoundHandler` missing `correlationId`** (new, LOW): The `notFoundHandler` function in `error-handler.ts` (lines 105-113) does not include `correlationId` in its response body. This is outside the scope of BUG-001 (which targeted `errorHandler`), but it means that 404 responses for unknown routes (e.g., `GET /api/v1/nonexistent`) will lack `correlationId`. This is a LOW-severity gap not introduced by the current fixes.
+- **Test count**: All **72 tests** pass (8 suites, 0 failures). The count increased from 71 to 72, confirming the BUG-003 rotation test was added.
+- **Build**: `npm run build` exits 0 with no TypeScript errors.
+- **Seed idempotency**: Two consecutive runs of `npm run db:seed` both complete successfully with output `✅ Seeding complete!` and no errors.
+
+## Final Verdict: PASS
+
+All 7 reported bugs are correctly fixed. The test suite grew from 71 to 72 tests, the build is clean, and the seed script is idempotent. The one new observation (`notFoundHandler` missing `correlationId`) is LOW severity and does not block the feature from being promoted to PR. The feature is ready for pull request.

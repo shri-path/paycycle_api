@@ -61,4 +61,9 @@ _None yet._
 
 ## Standing user instructions
 
-_None yet._
+### Agent handoffs require explicit user approval
+- **Date:** 2026-06-07
+- **Type:** user-instruction
+- **Context:** User corrected autonomous agent chaining — the orchestrator invoked Architect then immediately queued Dev without pausing.
+- **Rule:** After each agent completes its stage (Architect → Dev → Review → QA), stop and present the output to the user. Do NOT invoke the next agent in the pipeline until the user explicitly approves the handoff (e.g. "looks good, invoke Dev" or "proceed").
+- **Why:** The user wants visibility and control at every pipeline gate, not a fully autonomous end-to-end run.
