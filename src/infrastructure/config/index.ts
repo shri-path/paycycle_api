@@ -1,4 +1,7 @@
+import { config as dotenvConfig } from 'dotenv';
 import { configSchema } from './schema';
+
+dotenvConfig();
 
 function loadConfig() {
   const rawConfig = {

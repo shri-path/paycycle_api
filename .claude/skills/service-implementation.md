@@ -124,11 +124,8 @@ async handleWebhook(rawEvent: RawWebhookEvent): Promise<void> {
       break;
     default:
       // Never throw for unhandled events — prevents retry storms
-      if (process.env.NODE_ENV === 'production') {
-        this.logger.error({ eventType: event.type }, 'Unhandled webhook event');
-      } else {
-        this.logger.info({ eventType: event.type }, 'Unhandled webhook event (dev)');
-      }
+      // Always warn regardless of env — unknown event types always warrant attention
+      this.logger.warn({ eventType: event.type }, 'Unhandled webhook event');
   }
 }
 ```
@@ -192,7 +189,7 @@ export class [Model]Service {
    * @throws ConflictError if [model] with same name exists
    */
   async create(input: Create[Model]Input, vendorId: bigint, userId: bigint): Promise<[Model]Dto> {
-    this.logger.info({ input, vendorId }, 'Creating [model]');
+    this.logger.info({ vendorId }, 'Creating [model]'); // service propagation
 
     // === Business Rule: Uniqueness Check ===
     const existing = await this.repository.exists({
@@ -200,6 +197,7 @@ export class [Model]Service {
       vendorId,
     });
     if (existing) {
+      this.logger.warn({ name: input.name, vendorId }, '[Model] creation blocked — duplicate name');
       throw new ConflictError('[Model] with this name already exists');
     }
 
@@ -213,15 +211,18 @@ export class [Model]Service {
     // return this.mapper.toResponse(created);
 
     // === Simple CRUD: Direct repository call ===
-    const entity = await this.repository.create({
-      name: input.name,
-      description: input.description,
-      vendor: { connect: { id: vendorId } },
-      createdBy: { connect: { id: userId } },
-    });
-
-    this.logger.info({ id: entity.id.toString() }, '[Model] created successfully');
-    return to[Model]Dto(entity);
+    try {
+      const entity = await this.repository.create({
+        name: input.name,
+        description: input.description,
+        vendor: { connect: { id: vendorId } },
+        createdBy: { connect: { id: userId } },
+      });
+      return to[Model]Dto(entity);
+    } catch (error) {
+      this.logger.error({ error, vendorId }, 'Failed to create [model]');
+      throw new InternalServerError('Failed to create [model]');
+    }
   }
 
   // ============================================================
@@ -298,20 +299,24 @@ export class [Model]Service {
     input: Update[Model]Input,
     vendorId?: bigint,
   ): Promise<[Model]Dto> {
+    this.logger.info({ id: id.toString(), vendorId }, 'Updating [model]'); // service propagation
+
     // === Existence Check ===
     const existing = await this.repository.findById(id);
     if (!existing) {
+      this.logger.warn({ id: id.toString() }, '[Model] not found for update');
       throw new NotFoundError('[Model] not found');
     }
 
     // === Multi-tenant isolation ===
     if (vendorId && existing.vendorId !== vendorId) {
+      this.logger.warn({ id: id.toString(), vendorId }, '[Model] update blocked — tenant mismatch');
       throw new NotFoundError('[Model] not found');
     }
 
     // === Business Rule: State-based restrictions ===
-    // Example: Cannot update if in PROCESSING or COMPLETED status
     // if (['PROCESSING', 'COMPLETED'].includes(existing.status)) {
+    //   this.logger.warn({ id: id.toString(), status: existing.status }, '[Model] update blocked — invalid state');
     //   throw new BadRequestError('Cannot update [model] in current status');
     // }
 
@@ -323,14 +328,19 @@ export class [Model]Service {
         id: { not: id },
       });
       if (duplicate) {
+        this.logger.warn({ name: input.name, id: id.toString() }, '[Model] update blocked — duplicate name');
         throw new ConflictError('[Model] with this name already exists');
       }
     }
 
     // === Perform Update ===
-    const updated = await this.repository.update(id, input);
-    this.logger.info({ id: id.toString() }, '[Model] updated successfully');
-    return to[Model]Dto(updated);
+    try {
+      const updated = await this.repository.update(id, input);
+      return to[Model]Dto(updated);
+    } catch (error) {
+      this.logger.error({ error, id: id.toString() }, 'Failed to update [model]');
+      throw new InternalServerError('Failed to update [model]');
+    }
   }
 
   // ============================================================
@@ -343,27 +353,36 @@ export class [Model]Service {
    * @throws NotFoundError if [model] doesn't exist
    */
   async delete(id: bigint, hard = false, vendorId?: bigint): Promise<void> {
+    this.logger.info({ id: id.toString(), hard, vendorId }, 'Deleting [model]'); // service propagation
+
     const existing = await this.repository.findById(id);
     if (!existing) {
+      this.logger.warn({ id: id.toString() }, '[Model] not found for delete');
       throw new NotFoundError('[Model] not found');
     }
 
     // === Multi-tenant isolation ===
     if (vendorId && existing.vendorId !== vendorId) {
+      this.logger.warn({ id: id.toString(), vendorId }, '[Model] delete blocked — tenant mismatch');
       throw new NotFoundError('[Model] not found');
     }
 
     // === Business Rule: Cannot delete if in PROCESSING ===
     // if (existing.status === 'PROCESSING') {
+    //   this.logger.warn({ id: id.toString(), status: existing.status }, '[Model] delete blocked — invalid state');
     //   throw new BadRequestError('Cannot delete [model] while processing');
     // }
 
-    if (hard) {
-      await this.repository.hardDelete(id);
-      this.logger.warn({ id: id.toString() }, '[Model] hard deleted');
-    } else {
-      await this.repository.softDelete(id);
-      this.logger.info({ id: id.toString() }, '[Model] soft deleted');
+    try {
+      if (hard) {
+        await this.repository.hardDelete(id);
+        this.logger.warn({ id: id.toString() }, '[Model] hard deleted'); // audit trail for destructive op
+      } else {
+        await this.repository.softDelete(id);
+      }
+    } catch (error) {
+      this.logger.error({ error, id: id.toString(), hard }, 'Failed to delete [model]');
+      throw new InternalServerError('Failed to delete [model]');
     }
   }
 
@@ -380,35 +399,37 @@ export class [Model]Service {
     vendorId: bigint,
     userId: bigint,
   ): Promise<{ created: number }> {
-    this.logger.info({ count: items.length, vendorId }, 'Bulk creating [models]');
+    this.logger.info({ count: items.length, vendorId }, 'Bulk creating [models]'); // service propagation
 
-    const result = await prisma.$transaction(async (tx) => {
-      // Validate all items first
-      for (const item of items) {
-        const exists = await this.repository.exists(
-          { name: item.name, vendorId },
+    try {
+      const result = await prisma.$transaction(async (tx) => {
+        for (const item of items) {
+          const exists = await this.repository.exists(
+            { name: item.name, vendorId },
+            tx,
+          );
+          if (exists) {
+            this.logger.warn({ name: item.name, vendorId }, 'Bulk create blocked — duplicate name');
+            throw new ConflictError(`[Model] '${item.name}' already exists`);
+          }
+        }
+
+        return this.repository.createMany(
+          items.map((item) => ({
+            ...item,
+            vendorId,
+            createdById: userId,
+          })),
           tx,
         );
-        if (exists) {
-          throw new ConflictError(`[Model] '${item.name}' already exists`);
-        }
-      }
+      });
 
-      // Create all items
-      const createResult = await this.repository.createMany(
-        items.map((item) => ({
-          ...item,
-          vendorId,
-          createdById: userId,
-        })),
-        tx,
-      );
-
-      return createResult;
-    });
-
-    this.logger.info({ created: result.count }, 'Bulk create completed');
-    return { created: result.count };
+      return { created: result.count };
+    } catch (error) {
+      if (error instanceof AppError) throw error; // re-throw business errors as-is
+      this.logger.error({ error, count: items.length, vendorId }, 'Bulk create transaction failed');
+      throw new InternalServerError('Bulk create failed, please try again');
+    }
   }
 }
 ```
@@ -449,11 +470,20 @@ async create(command: Create[Model]Command): Promise<[Model]Dto> {
 
 @OnEvent(UserCreatedDomainEvent.name)
 export class CreateWalletWhenUserIsCreated {
-  constructor(private readonly walletRepo: WalletRepositoryPort) {}
+  constructor(
+    private readonly walletRepo: WalletRepositoryPort,
+    private readonly logger: Logger,
+  ) {}
 
   async handle(event: UserCreatedDomainEvent): Promise<void> {
-    const wallet = WalletEntity.create({ userId: event.aggregateId });
-    await this.walletRepo.insert(wallet);
+    this.logger.info({ aggregateId: event.aggregateId.toString() }, 'UserCreated event received — creating wallet'); // event propagation
+    try {
+      const wallet = WalletEntity.create({ userId: event.aggregateId });
+      await this.walletRepo.insert(wallet);
+    } catch (error) {
+      this.logger.error({ error, aggregateId: event.aggregateId.toString() }, 'Failed to create wallet on UserCreated event');
+      throw error;
+    }
   }
 }
 ```
@@ -573,17 +603,20 @@ async addCredits(
 Every service method follows this structure:
 
 ```
-1.  Log the operation (input context)
+1.  logger.info — entry point (service propagation); include IDs and key context, not raw input
 2.  Load existing entity (if update/delete)
-3.  Validate existence (NotFoundError)
-4.  Validate tenant isolation (ForbiddenError masked as NotFoundError)
-5.  Validate business rules (BadRequestError, ConflictError, UnprocessableError)
+3.  Validate existence → logger.warn then throw NotFoundError
+4.  Validate tenant isolation → logger.warn then throw NotFoundError
+5.  Validate business rules → logger.warn then throw (BadRequestError, ConflictError, UnprocessableError)
 6.  Create/update domain entity via factory (for complex modules)
-7.  Execute the operation (repository call, optionally in transaction)
-8.  Publish domain events (for aggregate roots with cross-module effects)
-9.  Log the result
+7.  Execute the operation inside try/catch (repository call, optionally in transaction)
+8.  catch: logger.error with full error + context, then re-throw or wrap as InternalServerError
+9.  Publish domain events (for aggregate roots) → logger.info at event propagation
 10. Return transformed DTO (via toDto() or mapper.toResponse())
 ```
+
+**Rule: every method that can throw must have at least one `warn` (business) or `error` (infrastructure) log call.**
+**`info` appears exactly twice per method: entry and, if applicable, event propagation. Never for success confirmations.**
 
 ---
 
@@ -592,14 +625,17 @@ Every service method follows this structure:
 1. **Never return Prisma entities directly** — Always transform to DTOs using `toDto()` functions or `mapper.toResponse()`
 2. **Never call Prisma directly** — Always go through repositories
 3. **Never import Express types** — Services are framework-agnostic (from clean-architecture)
-4. **Log at method boundaries** — Input context at start, result at end
-5. **Use named errors** — `NotFoundError`, `ConflictError`, not generic `Error`
-6. **Multi-tenant isolation is mandatory** — Filter by vendorId when applicable
-7. **Keep methods focused** — One use case per method
-8. **Transaction scope** — Use `prisma.$transaction()` when multiple writes must be atomic
-9. **Validate before mutate** — All checks before any write operation
-10. **No HTTP concerns** — No `req`, `res`, status codes, or headers
-11. **Classify as Command or Query** — Commands change state, queries read data (CQS from domain-driven-hexagon)
-12. **Use entity factories for complex modules** — `[Entity].create()` validates invariants and emits domain events
-13. **Depend on ports, not implementations** — Use `[Entity]RepositoryPort` interface for complex modules (from domain-driven-hexagon)
-14. **Prefer focused update methods** — Small, single-purpose over generic `update(id, data)` for critical operations (from open-saas)
+4. **`info` at entry only (service propagation)** — Log method entry with key IDs/context; not success, not completion
+5. **`warn` before every business error throw** — Log the violation reason and relevant context before throwing
+6. **`error` in every catch block** — Log full error object + context before re-throwing or wrapping
+7. **`info` at event propagation** — When publishing or entering a domain event handler
+8. **Use named errors** — `NotFoundError`, `ConflictError`, not generic `Error`
+9. **Multi-tenant isolation is mandatory** — Filter by vendorId when applicable
+10. **Keep methods focused** — One use case per method
+11. **Transaction scope** — Use `prisma.$transaction()` when multiple writes must be atomic
+12. **Validate before mutate** — All checks before any write operation
+13. **No HTTP concerns** — No `req`, `res`, status codes, or headers
+14. **Classify as Command or Query** — Commands change state, queries read data (CQS from domain-driven-hexagon)
+15. **Use entity factories for complex modules** — `[Entity].create()` validates invariants and emits domain events
+16. **Depend on ports, not implementations** — Use `[Entity]RepositoryPort` interface for complex modules (from domain-driven-hexagon)
+17. **Prefer focused update methods** — Small, single-purpose over generic `update(id, data)` for critical operations (from open-saas)
