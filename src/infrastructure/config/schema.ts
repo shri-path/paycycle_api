@@ -14,6 +14,7 @@ export const configSchema = z.object({
     .string()
     .transform((val) => val.split(',').map((origin) => origin.trim()))
     .default('http://localhost:3000'),
+  appBaseUrl: z.string().url().default('http://localhost:5173'),
   rateLimit: z.object({
     windowMs: z.coerce
       .number()

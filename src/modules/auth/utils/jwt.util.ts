@@ -2,10 +2,22 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import { config } from '@/infrastructure/config';
 import { UnauthorizedError } from '@/common/errors/app-error';
 
+/**
+ * Per-vendor role + permission context embedded in the access token (US-002, OQ-2).
+ * `permissions` holds the staff grant keys (empty for owners — owners are all-allow).
+ */
+export interface JwtVendorClaim {
+  vendorId: string; // BigInt serialized as string
+  role: string; // role slug, e.g. 'vendor_owner' | 'vendor_staff'
+  permissions: string[]; // staff grant keys
+}
+
 export interface JwtAccessPayload {
   userId: string; // BigInt serialized as string
   phone: string;
-  vendorIds: string[]; // BigInt[] serialized as string[]
+  vendorIds: string[]; // BigInt[] serialized as string[] — retained for back-compat
+  /** US-002: role+permissions per vendor. Optional for back-compat with older tokens. */
+  vendors?: JwtVendorClaim[];
 }
 
 export interface JwtRefreshPayload {

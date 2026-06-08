@@ -39,6 +39,14 @@ export class RefreshTokenService {
 
     const contexts = await this.vendorUserRepository.findActiveContextsByUserId(userId);
     const vendorIds = contexts.map((c) => c.vendorId.toString());
+    // Reload fresh role/permission claims so the new access token reflects
+    // current grants (OQ-2; memory: reload user context for new access token).
+    const claims = await this.vendorUserRepository.findVendorClaimsByUserId(userId);
+    const vendors = claims.map((c) => ({
+      vendorId: c.vendorId.toString(),
+      role: c.roleName,
+      permissions: c.permissions,
+    }));
 
     // 4. Rotate: revoke old, create new
     const newSessionId = crypto.randomUUID();
@@ -48,6 +56,7 @@ export class RefreshTokenService {
       userId: payload.userId,
       phone: user.phone,
       vendorIds,
+      vendors,
     });
 
     const newRefreshToken = jwtUtil.generateRefreshToken({

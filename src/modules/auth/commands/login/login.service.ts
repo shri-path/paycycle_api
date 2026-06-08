@@ -45,15 +45,22 @@ export class LoginService {
       lastLoginAt: userEntity.getProps().lastLoginAt,
     });
 
-    // 5. Load vendor contexts
+    // 5. Load vendor contexts + per-vendor role/permission claims (OQ-2)
     const contexts = await this.vendorUserRepository.findActiveContextsByUserId(userRecord.id);
     const vendorIds = contexts.map((c) => c.vendorId.toString());
+    const claims = await this.vendorUserRepository.findVendorClaimsByUserId(userRecord.id);
+    const vendors = claims.map((c) => ({
+      vendorId: c.vendorId.toString(),
+      role: c.roleName,
+      permissions: c.permissions,
+    }));
 
     // 6. Generate tokens
     const accessToken = jwtUtil.generateAccessToken({
       userId: userRecord.id.toString(),
       phone: userRecord.phone,
       vendorIds,
+      vendors,
     });
 
     const refreshTokenExpiry = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
