@@ -208,7 +208,9 @@ describe('POST /api/v1/auth/refresh', () => {
   });
 
   it('401 — invalid JWT string', async () => {
-    const res = await request(app).post('/api/v1/auth/refresh').send({ refreshToken: 'invalid.jwt' });
+    const res = await request(app)
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: 'invalid.jwt' });
     expect(res.status).toBe(401);
     // BUG-008: correlationId must be present in every error response
     expect(res.body.error.correlationId).toBeTruthy();
@@ -231,9 +233,7 @@ describe('POST /api/v1/auth/forgot-password', () => {
   });
 
   it('400 — invalid phone format', async () => {
-    const res = await request(app)
-      .post('/api/v1/auth/forgot-password')
-      .send({ phone: 'bad' });
+    const res = await request(app).post('/api/v1/auth/forgot-password').send({ phone: 'bad' });
     expect(res.status).toBe(400);
   });
 });
