@@ -32,10 +32,10 @@ model User {
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  sessions        UserSession[]
-  passwordResets  PasswordResetToken[]
-  vendorUsers     VendorUser[]
-  auditLogs       AuditLog[]
+  sessions       UserSession[]
+  passwordResets PasswordResetToken[]
+  vendorUsers    VendorUser[]
+  auditLogs      AuditLog[]
 
   @@index([phone])
   @@index([email])
@@ -72,9 +72,9 @@ model UserSession {
 model PasswordResetToken {
   id BigInt @id @default(autoincrement())
 
-  userId     BigInt @map("user_id")
-  resetToken String @unique @map("reset_token") @db.VarChar(255)
-  otpCode    String @map("otp_code") @db.VarChar(6)
+  userId     BigInt    @map("user_id")
+  resetToken String    @unique @map("reset_token") @db.VarChar(255)
+  otpCode    String    @map("otp_code") @db.VarChar(6)
   isUsed     Boolean   @default(false) @map("is_used")
   usedAt     DateTime? @map("used_at")
   expiresAt  DateTime  @map("expires_at")
@@ -114,10 +114,11 @@ model Vendor {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  referredBy  Vendor?    @relation("VendorReferrals", fields: [referredByVendorId], references: [id], onDelete: SetNull)
-  referrals   Vendor[]   @relation("VendorReferrals")
-  vendorUsers VendorUser[]
-  auditLogs   AuditLog[]
+  referredBy       Vendor?           @relation("VendorReferrals", fields: [referredByVendorId], references: [id], onDelete: SetNull)
+  referrals        Vendor[]          @relation("VendorReferrals")
+  vendorUsers      VendorUser[]
+  auditLogs        AuditLog[]
+  staffInvitations StaffInvitation[]
 
   @@index([referralCode])
   @@index([category])
@@ -171,8 +172,8 @@ model Permission {
 model RolePermission {
   id BigInt @id @default(autoincrement())
 
-  roleId       BigInt @map("role_id")
-  permissionId BigInt @map("permission_id")
+  roleId       BigInt   @map("role_id")
+  permissionId BigInt   @map("permission_id")
   assignedAt   DateTime @default(now()) @map("assigned_at")
 
   role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
@@ -196,9 +197,9 @@ enum VendorUserStatus {
 model VendorUser {
   id BigInt @id @default(autoincrement())
 
-  vendorId BigInt @map("vendor_id")
-  userId   BigInt @map("user_id")
-  roleId   BigInt @map("role_id")
+  vendorId BigInt           @map("vendor_id")
+  userId   BigInt           @map("user_id")
+  roleId   BigInt           @map("role_id")
   status   VendorUserStatus @default(ACTIVE)
 
   phone          String? @db.VarChar(15)
@@ -217,13 +218,80 @@ model VendorUser {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
 
+  staffPermissions StaffPermission[]
+  invitations      StaffInvitation[]
+
   @@unique([vendorId, userId])
   @@index([vendorId])
   @@index([userId])
   @@index([roleId])
   @@index([status])
   @@index([deletedAt])
+  @@index([vendorId, status])
   @@map("vendor_users")
+}
+
+// =============================================================================
+// US-002: STAFF PERMISSION GRANTS (per-membership override grants)
+// =============================================================================
+
+model StaffPermission {
+  id BigInt @id @default(autoincrement())
+
+  vendorUserId  BigInt  @map("vendor_user_id")
+  permissionKey String  @map("permission_key") @db.VarChar(50) // 'mark_deliveries' | 'mark_leaves' | 'add_extra_charges'
+  granted       Boolean @default(true)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendorUser VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorUserId, permissionKey])
+  @@index([vendorUserId])
+  @@map("vendor_staff_permissions")
+}
+
+// =============================================================================
+// US-002: STAFF INVITATIONS (CSPRNG token, 7-day expiry, single-use)
+// =============================================================================
+
+enum StaffInvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+
+  @@map("staff_invitation_status")
+}
+
+model StaffInvitation {
+  id BigInt @id @default(autoincrement())
+
+  vendorId        BigInt @map("vendor_id")
+  vendorUserId    BigInt @map("vendor_user_id") // the INVITED membership this token activates
+  invitedByUserId BigInt @map("invited_by_user_id")
+
+  phone     String                @db.VarChar(15)
+  tokenHash String                @unique @map("token_hash") @db.VarChar(255) // sha256 of CSPRNG token; raw token only in the link
+  status    StaffInvitationStatus @default(PENDING)
+
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+  revokedAt  DateTime? @map("revoked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendor     Vendor     @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendorUser VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  @@index([vendorUserId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@index([status])
+  @@map("staff_invitations")
 }
 
 // =============================================================================
