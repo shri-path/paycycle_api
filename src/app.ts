@@ -10,6 +10,7 @@ import { errorHandler, notFoundHandler } from './infrastructure/middlewares/erro
 import { setupSwagger } from './infrastructure/swagger/swagger.config';
 import authRoutes from './modules/auth/auth.routes';
 import userRoutes from './modules/user/user.routes';
+import staffRoutes from './modules/staff/staff.routes';
 
 export function createApp() {
   const app = express();
@@ -61,6 +62,7 @@ export function createApp() {
   const apiPrefix = `/api/${config.apiVersion}`;
   app.use(`${apiPrefix}/auth`, authRoutes);
   app.use(`${apiPrefix}/users`, userRoutes);
+  app.use(`${apiPrefix}/vendors`, staffRoutes);
 
   setupSwagger(app);
 

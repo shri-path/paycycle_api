@@ -15,6 +15,7 @@ function loadConfig() {
       refreshExpiry: process.env['JWT_REFRESH_EXPIRY'],
     },
     corsOrigin: process.env['CORS_ORIGIN'],
+    appBaseUrl: process.env['APP_BASE_URL'],
     rateLimit: {
       windowMs: process.env['RATE_LIMIT_WINDOW_MS'],
       maxRequests: process.env['RATE_LIMIT_MAX_REQUESTS'],

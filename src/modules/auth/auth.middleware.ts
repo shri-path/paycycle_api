@@ -16,6 +16,15 @@ export const authenticateToken = (req: Request, _res: Response, next: NextFuncti
       userId: BigInt(payload.userId),
       phone: payload.phone,
       vendorIds: payload.vendorIds.map(BigInt),
+      ...(payload.vendors
+        ? {
+            vendors: payload.vendors.map((v) => ({
+              vendorId: BigInt(v.vendorId),
+              role: v.role,
+              permissions: v.permissions,
+            })),
+          }
+        : {}),
     };
     next();
   } catch {

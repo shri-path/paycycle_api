@@ -31,6 +31,9 @@ import { RefreshTokenService } from './commands/refresh-token/refresh-token.serv
 import { ForgotPasswordService } from './commands/forgot-password/forgot-password.service';
 import { ResetPasswordService } from './commands/reset-password/reset-password.service';
 import { LogoutService } from './commands/logout/logout.service';
+import { sendSuccess } from '@/common/api-wrapper/response.util';
+import { acceptInviteService } from '@/modules/staff/staff.routes';
+import { acceptInviteSchema } from '@/modules/staff/staff.validator';
 
 // === Rate limiters ===
 // In test environment use very high limits so integration tests are not rate-limited
@@ -70,6 +73,16 @@ const forgotPasswordLimiter = rateLimit({
   keyGenerator: (req) => (req.body as { phone?: string })?.phone ?? req.ip ?? 'unknown',
   handler: (_req, _res, next) =>
     next(new TooManyRequestsError('Too many OTP requests. Try again in an hour.')),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const acceptInviteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 min
+  max: isTest ? 1000 : 10,
+  keyGenerator: (req) => req.ip ?? 'unknown',
+  handler: (_req, _res, next) =>
+    next(new TooManyRequestsError('Too many invite attempts. Try again in 15 minutes.')),
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -169,6 +182,49 @@ router.post(
   authenticateToken,
   validate(logoutSchema, 'body'),
   asyncHandler(controller.logout)
+);
+
+/**
+ * @openapi
+ * /auth/accept-invite:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Accept a staff invitation and auto-login
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token, password]
+ *             properties:
+ *               token: { type: string }
+ *               password: { type: string }
+ *               name: { type: string }
+ *     responses:
+ *       200: { description: Invitation accepted, tokens issued }
+ *       404: { description: Invitation not found or already used }
+ *       422: { description: Invitation expired }
+ */
+router.post(
+  '/accept-invite',
+  acceptInviteLimiter,
+  validate(acceptInviteSchema, 'body'),
+  asyncHandler(async (req, res, next) => {
+    try {
+      const body = req.body as { token: string; password: string; name?: string };
+      const result = await acceptInviteService.execute({
+        token: body.token,
+        password: body.password,
+        name: body.name ?? null,
+        ip: req.ip ?? null,
+        userAgent: req.headers['user-agent'] ?? null,
+      });
+      sendSuccess(res, result);
+    } catch (error) {
+      next(error);
+    }
+  })
 );
 
 export default router;

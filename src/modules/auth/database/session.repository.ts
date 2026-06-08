@@ -40,6 +40,12 @@ export class SessionRepository {
   }
 }
 
+export interface VendorClaim {
+  vendorId: bigint;
+  roleName: string;
+  permissions: string[];
+}
+
 export class VendorUserRepository {
   async findActiveContextsByUserId(userId: bigint): Promise<VendorContext[]> {
     const rows = await prisma.vendorUser.findMany({
@@ -54,6 +60,26 @@ export class VendorUserRepository {
       vendorId: row.vendorId,
       roleName: row.role.name,
       vendorName: row.vendor.name,
+    }));
+  }
+
+  /**
+   * US-002 (OQ-2): per-vendor role + granted permission keys for JWT embedding.
+   * Owners report no grant keys (they are all-allow); staff report granted keys only.
+   */
+  async findVendorClaimsByUserId(userId: bigint): Promise<VendorClaim[]> {
+    const rows = await prisma.vendorUser.findMany({
+      where: { userId, status: 'ACTIVE', deletedAt: null },
+      include: {
+        role: { select: { name: true } },
+        staffPermissions: { where: { granted: true }, select: { permissionKey: true } },
+      },
+    });
+
+    return rows.map((row) => ({
+      vendorId: row.vendorId,
+      roleName: row.role.name,
+      permissions: row.staffPermissions.map((p) => p.permissionKey),
     }));
   }
 }

@@ -252,7 +252,10 @@ describe('LoginService', () => {
         .mockResolvedValue([
           { vendorId: 10n, roleName: 'vendor_owner', vendorName: 'Test Vendor' },
         ]),
-    } as jest.Mocked<VendorUserRepository>;
+      findVendorClaimsByUserId: jest
+        .fn()
+        .mockResolvedValue([{ vendorId: 10n, roleName: 'vendor_owner', permissions: [] }]),
+    } as unknown as jest.Mocked<VendorUserRepository>;
 
     loginService = new LoginService(
       userRepository,

@@ -25,7 +25,22 @@ const permissions = [
   { name: 'extra_charge:read', resource: 'extra_charge', action: 'read', description: 'View extra charges' },
   { name: 'extra_charge:write', resource: 'extra_charge', action: 'write', description: 'Add extra charges' },
   { name: 'permissions:manage', resource: 'permissions', action: 'manage', description: 'Manage role permissions' },
+  // US-002 RBAC catalog — staff-grantable capabilities (resource:action)
+  { name: 'delivery:mark', resource: 'delivery', action: 'mark', description: 'Mark deliveries (staff grant: mark_deliveries)' },
+  { name: 'leave:mark', resource: 'leave', action: 'mark', description: 'Mark customer leaves (staff grant: mark_leaves)' },
+  { name: 'charge:add', resource: 'charge', action: 'add', description: 'Add extra charges (staff grant: add_extra_charges)' },
+  // US-002 RBAC catalog — owner-exclusive markers
+  { name: 'list:create', resource: 'list', action: 'create', description: 'Create supply lists (owner only)' },
+  { name: 'list:edit', resource: 'list', action: 'edit', description: 'Edit supply lists (owner only)' },
+  { name: 'payment:mark', resource: 'payment', action: 'mark', description: 'Mark payments received (owner only)' },
+  { name: 'price:edit', resource: 'price', action: 'edit', description: 'Edit pricing (owner only)' },
+  { name: 'staff:invite', resource: 'staff', action: 'invite', description: 'Invite/manage staff (owner only)' },
+  { name: 'subscription:manage', resource: 'subscription', action: 'manage', description: 'Manage subscription (owner only)' },
+  { name: 'revenue:view', resource: 'revenue', action: 'view', description: 'View revenue reports (owner only)' },
 ];
+
+// Staff-grantable permission keys (per-membership grants, NOT role-level).
+const STAFF_GRANT_KEYS = ['mark_deliveries', 'mark_leaves', 'add_extra_charges'] as const;
 
 async function seed() {
   console.log('🌱 Seeding database...');
@@ -112,14 +127,16 @@ async function seed() {
       },
     });
 
-    const existingVendorUser = await prisma.vendorUser.findFirst({
-      where: { userId: testUser.id },
+    let testVendorId: bigint;
+    const existingOwnerMembership = await prisma.vendorUser.findFirst({
+      where: { userId: testUser.id, roleId: vendorOwnerRole.id },
     });
 
-    if (!existingVendorUser) {
+    if (!existingOwnerMembership) {
       const testVendor = await prisma.vendor.create({
         data: { name: 'Test Vendor' },
       });
+      testVendorId = testVendor.id;
 
       await prisma.vendorUser.create({
         data: {
@@ -130,9 +147,104 @@ async function seed() {
           joinedAt: new Date(),
         },
       });
+    } else {
+      testVendorId = existingOwnerMembership.vendorId;
     }
 
     console.log('✓ Dev test user seeded: +919000000001 / Test@123');
+
+    // US-002: dev staff memberships with varied statuses + permission grants
+    const staffSeeds: Array<{
+      phone: string;
+      name: string;
+      status: 'ACTIVE' | 'DISABLED' | 'INVITED';
+      area: string;
+      grants: Array<(typeof STAFF_GRANT_KEYS)[number]>;
+    }> = [
+      {
+        phone: '+919000000010',
+        name: 'Staff Active',
+        status: 'ACTIVE',
+        area: 'Sector 21 — Morning Route',
+        grants: ['mark_deliveries', 'mark_leaves'],
+      },
+      {
+        phone: '+919000000011',
+        name: 'Staff Disabled',
+        status: 'DISABLED',
+        area: 'Sector 22 — Evening Route',
+        grants: ['mark_deliveries'],
+      },
+      {
+        phone: '+919000000012',
+        name: 'Staff Invited',
+        status: 'INVITED',
+        area: 'Sector 23 — All Day',
+        grants: ['mark_deliveries', 'mark_leaves', 'add_extra_charges'],
+      },
+    ];
+
+    for (const s of staffSeeds) {
+      const staffUser = await prisma.user.upsert({
+        where: { phone: s.phone },
+        update: {},
+        create: { phone: s.phone, passwordHash: hash, name: s.name, preferredLanguage: 'en' },
+      });
+
+      let membership = await prisma.vendorUser.findUnique({
+        where: { vendorId_userId: { vendorId: testVendorId, userId: staffUser.id } },
+      });
+
+      if (!membership) {
+        membership = await prisma.vendorUser.create({
+          data: {
+            vendorId: testVendorId,
+            userId: staffUser.id,
+            roleId: vendorStaffRole.id,
+            status: s.status,
+            phone: s.phone,
+            areaRouteLabel: s.area,
+            invitedAt: new Date(),
+            joinedAt: s.status === 'INVITED' ? null : new Date(),
+            disabledAt: s.status === 'DISABLED' ? new Date() : null,
+          },
+        });
+      }
+
+      for (const key of STAFF_GRANT_KEYS) {
+        await prisma.staffPermission.upsert({
+          where: {
+            vendorUserId_permissionKey: { vendorUserId: membership.id, permissionKey: key },
+          },
+          update: { granted: s.grants.includes(key) },
+          create: { vendorUserId: membership.id, permissionKey: key, granted: s.grants.includes(key) },
+        });
+      }
+
+      // Seed one PENDING invitation for the INVITED staff member
+      if (s.status === 'INVITED') {
+        const existingInvite = await prisma.staffInvitation.findFirst({
+          where: { vendorUserId: membership.id, status: 'PENDING' },
+        });
+        if (!existingInvite) {
+          // Deterministic dev token hash (NOT a real CSPRNG token — dev seed only).
+          const devTokenHash = `dev-seed-${membership.id.toString()}`.padEnd(64, '0');
+          await prisma.staffInvitation.create({
+            data: {
+              vendorId: testVendorId,
+              vendorUserId: membership.id,
+              invitedByUserId: testUser.id,
+              phone: s.phone,
+              tokenHash: devTokenHash,
+              status: 'PENDING',
+              expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+            },
+          });
+        }
+      }
+    }
+
+    console.log('✓ Dev staff memberships + grants + pending invitation seeded');
   }
 
   console.log('✅ Seeding complete!');
