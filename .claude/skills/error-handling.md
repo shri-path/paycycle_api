@@ -513,31 +513,68 @@ if (!Guard.lengthIsBetween(props.country, 2, 50)) {
 
 ## Error Logging
 
-### What to Log
+### Mandatory Logging Rule
+
+**Every service method and every event handler MUST contain at least one `warn` or `error` log call.**
+`info` is reserved for two cases only:
+1. **Service propagation** — logging the entry point of a service/use-case call (e.g., `'Creating [model]'`)
+2. **Event propagation** — logging the emission or handling of a domain event (e.g., `'[Entity]Created event published'`)
+
+No `info` logs for success confirmations, happy-path completions, or internal state. Use `debug` for those if needed.
 
 ```typescript
-// Service layer: log business-context errors as warnings
-this.logger.warn({ id, status: entity.status, attemptedStatus: newStatus }, 
-  'Invalid state transition attempted');
+// ✅ CORRECT: info only at entry (service propagation)
+async create(input: Create[Model]Input): Promise<[Model]Dto> {
+  this.logger.info({ vendorId: input.vendorId }, 'Creating [model]');
 
-// Service layer: log unexpected errors as errors
-this.logger.error({ error, id }, 'Failed to process [model]');
+  const existing = await this.repository.exists({ name: input.name });
+  if (existing) {
+    this.logger.warn({ name: input.name }, '[Model] creation blocked — name conflict');
+    throw new ConflictError('[Model] with this name already exists');
+  }
+
+  try {
+    const entity = await this.repository.create(input);
+    return to[Model]Dto(entity);
+  } catch (error) {
+    this.logger.error({ error, input }, 'Failed to create [model]');
+    throw new InternalServerError('Failed to create [model]');
+  }
+}
+
+// ✅ CORRECT: info only at event propagation
+async handle(event: [Entity]CreatedDomainEvent): Promise<void> {
+  this.logger.info({ aggregateId: event.aggregateId }, '[Entity]Created event received');
+  try {
+    await this.walletRepo.insert(WalletEntity.create({ userId: event.aggregateId }));
+  } catch (error) {
+    this.logger.error({ error, aggregateId: event.aggregateId }, 'Failed to handle [Entity]Created event');
+    throw error;
+  }
+}
+
+// ❌ WRONG: info on success completion
+this.logger.info({ id: entity.id }, '[Model] created successfully'); // not propagation
+
+// ❌ WRONG: missing warn/error before throwing a business error
+if (existing) throw new ConflictError('...');  // must log warn first
 
 // Never log: passwords, tokens, full request bodies with sensitive data
 ```
 
-### Log Levels for Errors
+### Log Levels
 
-| Error Type           | Log Level | Rationale                              |
-|---------------------|-----------|----------------------------------------|
-| ValidationError     | debug     | Expected, client's problem             |
-| NotFoundError       | debug     | Expected, normal flow                  |
-| UnauthorizedError   | warn      | Could indicate attack                  |
-| ForbiddenError      | warn      | Could indicate privilege escalation    |
-| ConflictError       | info      | Business conflict, normal flow         |
-| BadRequestError     | debug     | Expected, client's problem             |
-| InternalServerError | error     | Unexpected, needs investigation        |
-| ServiceUnavailable  | error     | External dependency failure            |
+| Situation                                    | Level   | Rationale                                    |
+|---------------------------------------------|---------|----------------------------------------------|
+| Service method entry / use-case invocation  | `info`  | Service propagation — required               |
+| Domain event emitted or handler entered     | `info`  | Event propagation — required                 |
+| Business rule violation before throw        | `warn`  | Expected but notable; aids debugging         |
+| Unauthorized / Forbidden before throw       | `warn`  | Could indicate attack or privilege escalation|
+| catch block in service / event handler      | `error` | Unexpected; always log full error + context  |
+| External service failure                    | `error` | Infrastructure dependency failure            |
+| Hard delete / destructive operation         | `warn`  | Audit trail for irreversible actions         |
+| Unhandled webhook event type                | `warn`  | Unknown event type always warrants attention |
+| Internal state detail (verbose)             | `debug` | Never `info` for internal noise              |
 
 ---
 
@@ -547,7 +584,7 @@ this.logger.error({ error, id }, 'Failed to process [model]');
 2. **Never send raw error messages in production** — Use generic messages for 500s
 3. **Use specific error classes** — Not generic `Error` or `AppError`
 4. **Error messages are user-facing** — Clear, actionable, no stack traces
-5. **Log with context** — Include entity ID, operation, relevant fields
+5. **Log with context** — Include entity ID, correlationId, operation, relevant fields
 6. **Multi-tenant: mask as NotFound** — Never reveal data existence to wrong tenant
 7. **Transaction errors: re-throw AppError** — Don't wrap business errors in generic errors
 8. **Validation errors at boundary only** — Don't re-validate in services what Zod already checked
@@ -558,3 +595,5 @@ this.logger.error({ error, id }, 'Failed to process [model]');
 13. **Use Guard utility in domain entities** — For argument validation in entities/VOs (from domain-driven-hexagon)
 14. **Catch P2002 at repository level** — Translate Prisma unique constraint violations to ConflictError
 15. **Never throw in webhook handlers** — Return 2XX for unhandled events to prevent retry storms (from open-saas)
+16. **Every method and event handler must have warn/error logging** — No method may throw or fail silently without a `warn` (business violation) or `error` (infrastructure failure) log call
+17. **`info` is for propagation only** — Service entry and event emit/receive; never use `info` for success confirmations or internal checkpoints

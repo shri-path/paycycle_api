@@ -713,6 +713,55 @@ export const fakerFactory = {
 
 ---
 
+## Logging Verification Tests
+
+Every error/warning path must assert that the correct log level was called. This ensures no silent failures slip through.
+
+```typescript
+describe('create', () => {
+  it('should warn and throw ConflictError on duplicate name', async () => {
+    mockRepo.exists.mockResolvedValue(true);
+
+    await expect(service.create(createMockInput(), BigInt(1), BigInt(1)))
+      .rejects.toThrow(ConflictError);
+
+    // warn must have been called before the throw
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ name: expect.any(String) }),
+      expect.stringContaining('duplicate'),
+    );
+  });
+
+  it('should error-log and throw InternalServerError on repository failure', async () => {
+    mockRepo.exists.mockResolvedValue(false);
+    mockRepo.create.mockRejectedValue(new Error('DB connection lost'));
+
+    await expect(service.create(createMockInput(), BigInt(1), BigInt(1)))
+      .rejects.toThrow(InternalServerError);
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ error: expect.any(Error) }),
+      expect.stringContaining('Failed to create'),
+    );
+  });
+
+  it('should info-log only at entry, not on success', async () => {
+    mockRepo.exists.mockResolvedValue(false);
+    mockRepo.create.mockResolvedValue(createMock[Model]());
+
+    await service.create(createMockInput(), BigInt(1), BigInt(1));
+
+    // info called exactly once (entry / service propagation)
+    expect(mockLogger.info).toHaveBeenCalledTimes(1);
+    // no warn or error on happy path
+    expect(mockLogger.warn).not.toHaveBeenCalled();
+    expect(mockLogger.error).not.toHaveBeenCalled();
+  });
+});
+```
+
+---
+
 ## Cross-Module Event Testing (from domain-driven-hexagon)
 
 Test that domain events trigger correct cross-module side effects:
@@ -753,6 +802,9 @@ describe('Cross-module: UserCreated -> CreateWallet', () => {
 - [ ] **Business rules** — each rule tested individually
 - [ ] **Pagination meta** — correct total, totalPages
 - [ ] **Empty results** — list returns empty array, not error
+- [ ] **`warn` logged before every business error** — verify `mockLogger.warn` was called with relevant context before each throw
+- [ ] **`error` logged in every catch path** — verify `mockLogger.error` was called in infrastructure failure scenarios
+- [ ] **`info` used only at entry / event propagation** — verify no `mockLogger.info` calls on success paths or completions
 
 ### Unit Tests (Domain Objects — from domain-driven-hexagon)
 - [ ] **Entity creation** via factory method (`[Entity].create()`)
@@ -784,6 +836,7 @@ describe('Cross-module: UserCreated -> CreateWallet', () => {
 - [ ] **correlationId** present in error responses
 - [ ] **No internal fields** exposed in responses (whitelist check)
 - [ ] **Middleware chain** executes in order (authenticate -> authorize -> validate)
+- [ ] **Error log written on 4xx/5xx** — verify log file entry exists with correlationId (where file logging is active)
 
 ---
 
@@ -803,3 +856,6 @@ describe('Cross-module: UserCreated -> CreateWallet', () => {
 12. **Test mapper whitelist** — Verify no internal fields leak in toResponse (from domain-driven-hexagon)
 13. **Use faker for integration test data** — Unique, realistic data prevents test collisions (from open-saas)
 14. **Classify tests as Command or Query** — Mirror CQS classification in test suite organization
+15. **Assert `warn` before every business error throw** — Each test that expects a thrown error must also assert `mockLogger.warn` was called with matching context
+16. **Assert `error` in every catch path test** — Tests for infrastructure failures must assert `mockLogger.error` was called
+17. **Assert `info` called exactly at entry (and event propagation)** — Verify no extraneous `info` calls on success or completion paths

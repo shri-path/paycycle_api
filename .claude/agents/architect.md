@@ -231,49 +231,79 @@ For each endpoint:
 
 ## Complexity: [Tier] — Skills to follow: [list]
 
-### Task 1: Database Schema
-- **Skill**: `prisma-schema-design.md`
-- Files to create/modify, acceptance criteria
+## Parallel Workstream Plan
 
-### Task 2: Domain Model (Moderate/Complex only)
-- **Skill**: `domain-modeling.md`
-- Entity, VO, event files to create
+> Each **Phase** starts only after all streams in the prior phase complete.
+> Streams within the same phase own **non-overlapping files** and run simultaneously.
+> Agent count per phase = number of independent file groups (2–3 typical).
+> **Simple modules** may collapse Phase 1 streams into fewer agents — omit Stream B.
 
-### Task 3: Repository Port + Implementation
-- **Skill**: `repository-implementation.md`
-- Port interface, Prisma adapter, mapper
+---
 
-### Task 4: Types & DTOs
-- **Skill**: `module-scaffold.md` (Step 2)
-- ResponseBase whitelist, toDto functions
+### Phase 1 (parallel — no cross-stream dependencies)
 
-### Task 5: Validators
-- **Skill**: `validation-schemas.md`
-- Zod schemas for create, update, query, params
+#### Stream A: Data Foundation
+**Files owned**: `prisma/schema.prisma`, `prisma/migrations/`, `prisma/seeds/index.ts`
+**Skills**: `prisma-schema-design.md`
+- **Task A1**: [Schema changes with aggregate boundary annotations, mandatory indexes]
+- **Task A2**: [Seed permissions — resource:action entries]
 
-### Task 6: Service Layer
-- **Skill**: `service-implementation.md`
-- CQS classification per method, domain entity usage
+#### Stream B: Domain Core *(Moderate/Complex only)*
+**Files owned**: `src/modules/[module]/domain/`, `src/modules/[module]/[module].types.ts`
+**Skills**: `domain-modeling.md`
+- **Task B1**: [Entities with factory + invariants, value objects, domain events]
+- **Task B2**: [Types/DTOs — ResponseBase whitelist, toDto shapes]
 
-### Task 7: Controller
-- **Skill**: `module-scaffold.md` (Step 5)
-- Arrow functions, try/catch → next(error)
+#### Stream C: Validation Layer
+**Files owned**: `src/modules/[module]/[module].validator.ts`
+**Skills**: `validation-schemas.md`
+- **Task C1**: [Zod schemas — strict for mutations, passthrough for queries, z.nativeEnum for enums]
 
-### Task 8: Routes + Registration
-- **Skill**: `module-scaffold.md` (Steps 6-9)
-- Composition root wiring, middleware chain
+---
 
-### Task 9: Permissions Seed
-- **Skill**: `prisma-schema-design.md` (Step 8)
-- resource:action permission entries
+### Phase 2 (parallel — after Phase 1 complete)
 
-### Task 10: Tests
-- **Skill**: `testing-strategy.md`
-- Unit tests (service, domain entity, mapper), integration tests
+#### Stream D: Data Access Layer
+**Files owned**: `src/modules/[module]/database/` (port + adapter + mapper)
+**Skills**: `repository-implementation.md`
+**Depends on**: Stream A (schema), Stream B (domain types)
+- **Task D1**: [Repository port interface — method signatures, transaction support]
+- **Task D2**: [Prisma adapter — soft-delete filters, P2002 → ConflictError, focused updates]
+- **Task D3**: [Mapper — toDomain / toPersistence / toResponse with field whitelist]
 
-### Task 11: Swagger Documentation
-- OpenAPI annotations for all endpoints
+#### Stream E: Application Layer
+**Files owned**: `src/modules/[module]/[module].service.ts`
+**Skills**: `service-implementation.md`
+**Depends on**: Stream B types; port interface defined in DOMAIN_MODEL.md (available before Phase 2)
+- **Task E1**: [Service methods — CQS classification, entity factory usage, mapper calls, multi-tenant guard]
+
+---
+
+### Phase 3 (parallel — after Phase 2 complete)
+
+#### Stream F: Interface Layer
+**Files owned**: `src/modules/[module]/[module].controller.ts`, `src/modules/[module]/[module].routes.ts`, `src/app.ts`
+**Skills**: `module-scaffold.md` (Steps 5–9)
+**Depends on**: Stream C (validators), Stream E (service)
+- **Task F1**: [Controller — arrow functions, try/catch → next(error), vendorId from JWT]
+- **Task F2**: [Routes — composition root, middleware chain: authenticate → authorize → validate]
+- **Task F3**: [Register module in app.ts, Swagger annotations]
+
+#### Stream G: Tests
+**Files owned**: `src/modules/[module]/__tests__/`, `tests/integration/`
+**Skills**: `testing-strategy.md`
+**Depends on**: All prior streams
+- **Task G1**: [Unit tests — entity factory/invariants, mapper whitelist, service with mocked port]
+- **Task G2**: [Integration tests — HTTP lifecycle, correlationId, auth/RBAC, multi-tenant isolation]
 ```
+
+---
+
+**Scaling guidance** (choose agent count to match natural file independence):
+- **Simple module** (pure CRUD): Phase 1 → 2 streams (schema+seed / types+validator); Phase 2 → 2 streams (repo+service / swagger); Phase 3 → 1 stream (controller+routes+tests)
+- **Moderate module**: Phase 1 → 3 streams (A/B/C); Phase 2 → 2 streams (D/E); Phase 3 → 2 streams (F/G)
+- **Complex module**: Use all streams above; may split Stream D (port vs adapter) into separate agents if adapter is large
+- **Never exceed** the number of truly non-overlapping file groups — extra agents create merge conflicts
 
 ### FEATURE_BUGS.md Structure
 
@@ -309,6 +339,7 @@ For each endpoint:
 12. **Place feature documents** in `docs/features/[feature-name]/` within the paycycle_api directory
 13. **Include correlationId** in all error response designs
 14. **Design mapper contracts** — For Moderate/Complex modules, specify toDomain/toPersistence/toResponse
+15. **Partition tasks into parallel workstreams** — Group tasks by file ownership into independent streams per phase; choose agent count so no two streams in the same phase write the same file; document this in FEATURE_TASKS.md using the parallel workstream template
 
 ## Collaboration
 

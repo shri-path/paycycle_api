@@ -3,3 +3,11 @@
 - [Product Context](project_context.md) — Backend API for PayCycle vendor app, tier 2-3 Indian cities, DDD + Clean Architecture
 - [Commit Strategy](feedback_commit_strategy.md) — Conventional commits (type: desc), split by concern, match paycycle_vendor style
 - [Project Document Paths](reference_project_docs.md) — Absolute paths to features, wireframes, user stories, DB design, and progress tracker; agent update rules
+- [CSPRNG for Secrets](gotcha_csprng_secrets.md) — OTPs/tokens must use crypto.randomInt/randomBytes, never Math.random
+- [No Placeholder Tests](gotcha_no_placeholder_tests.md) — never commit stub tests; every test file needs real cases
+- [Entity Invariants](convention_entity_invariants.md) — getProps() returns Object.freeze; create() AND reconstitute() call validate()
+- [Refresh Token Context](gotcha_refresh_token_context.md) — reload real phone + vendorIds from DB when rotating tokens, never empty defaults
+- [CorrelationId on All Errors](convention_correlation_id.md) — every error response (incl. notFoundHandler) carries correlationId
+- [Strict Zod Field Coverage](gotcha_strict_zod_fields.md) — .strict() schemas must declare every field the controller reads
+- [Idempotent Seeds](convention_seed_idempotent.md) — seeds use upsert/existence checks, never bare create()
+- [DomainEventBase](convention_domain_event_base.md) — all domain events extend DomainEventBase (id, aggregateId, occurredAt, metadata)

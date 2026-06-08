@@ -257,9 +257,26 @@ curl http://localhost:3000/api/v1/[resource] \
   -H "Authorization: Bearer <token>"
 ```
 
+## Parallel Test Streams
+
+Split testing work across independent sub-agents so test categories run simultaneously. Each stream writes to distinct test files and owns no overlapping paths.
+
+| Stream | Files owned | Test categories covered |
+|--------|-------------|------------------------|
+| **Stream U — Unit** | `src/modules/[m]/__tests__/` | Domain invariants, mapper whitelist, service logic (mocked repo) |
+| **Stream I — Integration** | `tests/integration/[feature].test.ts` | Happy path CRUD lifecycle, pagination/filtering, response format, correlationId |
+| **Stream S — Security** | `tests/integration/[feature]-security.test.ts` | Auth/RBAC, multi-tenant isolation, rate limiting, strict validation |
+| **Stream E — Edge** | `tests/integration/[feature]-edge.test.ts` | Boundary values, concurrent ops, soft-delete, hidden flows, special characters |
+
+Launch all four streams simultaneously. Wait for all to complete, then aggregate findings into `FEATURE_BUGS.md`.
+
+For small features (Simple tier), merge Stream I + E into one agent and Stream U + S into another — 2 parallel streams.
+
 ## How to Start
 
 When given a feature to test:
+
+### Step 1 — Orient
 1. **Read `.claude/memory/MEMORY.md` first** — standing decisions and conventions that override defaults
 2. Read `docs/features/[feature-name]/FEATURE_PLAN.md` — understand every endpoint, rule, and edge case
 3. Read `docs/features/[feature-name]/DOMAIN_MODEL.md` — understand entity invariants and state transitions
@@ -270,12 +287,25 @@ When given a feature to test:
 8. **Read `testing-strategy.md` skill** — follow its templates and patterns
 6. **Read `error-handling.md` skill** — understand expected error codes and formats
 7. Ensure the server is running (`npm run dev`)
-8. Start with happy path tests for each endpoint
-9. Move to domain invariant tests — verify entity rules are enforced
-10. Validation tests — test every Zod constraint
-11. Auth/RBAC and multi-tenant isolation tests
-12. Error response format tests (correlationId, error codes)
-13. Edge cases and hidden flows
-14. Document all bugs in `FEATURE_BUGS.md` with skill references
-15. Write automated integration tests in `tests/integration/`
-16. Report summary: total tests, pass/fail counts, critical bugs found, skill violations found
+
+### Step 2 — Launch parallel test agents
+
+Using the Agent tool, launch all test streams **simultaneously** (one agent per stream). Each sub-agent prompt must include:
+- Its stream's file ownership and test categories (from the table above)
+- The full content of FEATURE_PLAN.md and DOMAIN_MODEL.md as context
+- The instruction: "write automated Jest/Supertest tests; document every failing assertion as a bug entry (BUG-N format) in your output"
+- The instruction: "do not modify any source files — write tests and bug reports only"
+
+**For a Moderate/Complex feature, launch 4 agents in parallel:**
+```
+Agent U: unit tests          → skills: testing-strategy.md, domain-modeling.md
+Agent I: integration tests   → skills: testing-strategy.md, api-contract-design.md
+Agent S: security tests      → skills: testing-strategy.md, error-handling.md
+Agent E: edge-case tests     → skills: testing-strategy.md, validation-schemas.md
+```
+
+### Step 3 — Aggregate and report
+1. Collect bug entries from all sub-agents and write them to `docs/features/[feature-name]/FEATURE_BUGS.md` (assign sequential BUG-N numbers)
+2. Merge any new test files written by sub-agents
+3. Run `npm test` to confirm the full suite passes
+4. Report summary: total tests, pass/fail counts, critical bugs found, skill violations found
