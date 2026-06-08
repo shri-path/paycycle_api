@@ -41,4 +41,22 @@
 ---
 
 ## Bugs
-_None yet — to be filled by QA._
+
+### BUG-001: Accept-invite returns 500 (not 422/404) when a persisted invitation row violates the `expiresAt > createdAt` invariant
+- **Severity**: Low
+- **Category**: Error Format / Edge Case
+- **Endpoint**: `POST /api/v1/auth/accept-invite`
+- **Steps to Reproduce**:
+  1. Create an invitation, then mutate the persisted row so `expiresAt <= createdAt` (e.g. force `expiresAt` into the past while `createdAt` stays current — as a corrupt/clock-skew row could).
+  2. POST `/auth/accept-invite` with that token.
+- **Expected**: A clean, mapped error — `422 ExpiredInviteError` for an expired invite, or `404 InvalidInviteError`.
+- **Actual**: `500 INTERNAL_ERROR`. `AcceptInviteService.execute` calls `StaffInvitationEntity.reconstitute(...)` (accept-invite.service.ts:48), whose `validate()` (staff-invitation.entity.ts:120) throws `ArgumentInvalidException('Invitation expiresAt must be after createdAt')`. `ArgumentInvalidException` is a plain `Error`, not an `AppError` (app-error.ts:1), so it is not mapped to a status code and falls through to the generic 500 handler.
+- **Root Cause**: Implementation — a domain-invariant violation on reconstitution is not translated to an HTTP-mappable `AppError` on the public accept-invite path.
+- **Impact note**: Normal flows are unaffected. A genuinely expired invite (created 7+ days ago, so the invariant still holds) correctly returns **422** — verified by the integration test `expired token (>7d) → 422`. This bug only manifests for a row whose stored `expiresAt <= createdAt`, which the normal invite flow never produces. Logged for robustness only; not a merge blocker.
+- **Status**: Open
+
+---
+
+## MINOR-2 verdict (Review asked QA to confirm the post-commit session-creation edge)
+
+**No bug — Review's "accept as known edge" reading is correct.** In `accept-invite.service.ts` the password update, membership activation and invitation acceptance commit inside the `$transaction` (lines 79-104); the `UserSession` is created afterward (line 137). If that post-commit session creation failed, the invite is consumed and the membership is ACTIVE, but the **user is NOT locked out**: the password they chose at accept time was already committed, so they can log in normally via `POST /auth/login`. Verified by the integration test `accept sets the password; the user can subsequently log in with it` (accepts an invite, then independently logs in with the same password → 200 + fresh tokens). Practical impact is low; **no bug filed**.
