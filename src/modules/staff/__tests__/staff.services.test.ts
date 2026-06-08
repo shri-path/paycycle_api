@@ -306,4 +306,15 @@ describe('AcceptInviteService', () => {
     );
     await expect(service.execute(dto)).rejects.toBeInstanceOf(ExpiredInviteError);
   });
+
+  // BUG-001: a corrupt persisted row (expiresAt <= createdAt) violates the entity
+  // invariant on reconstitution. It must be masked as a 404 InvalidInviteError, not
+  // leak as an unmapped 500.
+  it('masks a corrupt invitation row (failed reconstitution) as InvalidInviteError (404)', async () => {
+    const created = new Date();
+    invitationRepo.findByTokenHash.mockResolvedValue(
+      invRecord({ createdAt: created, expiresAt: new Date(created.getTime() - 1000) })
+    );
+    await expect(service.execute(dto)).rejects.toBeInstanceOf(InvalidInviteError);
+  });
 });

@@ -53,7 +53,8 @@
 - **Actual**: `500 INTERNAL_ERROR`. `AcceptInviteService.execute` calls `StaffInvitationEntity.reconstitute(...)` (accept-invite.service.ts:48), whose `validate()` (staff-invitation.entity.ts:120) throws `ArgumentInvalidException('Invitation expiresAt must be after createdAt')`. `ArgumentInvalidException` is a plain `Error`, not an `AppError` (app-error.ts:1), so it is not mapped to a status code and falls through to the generic 500 handler.
 - **Root Cause**: Implementation — a domain-invariant violation on reconstitution is not translated to an HTTP-mappable `AppError` on the public accept-invite path.
 - **Impact note**: Normal flows are unaffected. A genuinely expired invite (created 7+ days ago, so the invariant still holds) correctly returns **422** — verified by the integration test `expired token (>7d) → 422`. This bug only manifests for a row whose stored `expiresAt <= createdAt`, which the normal invite flow never produces. Logged for robustness only; not a merge blocker.
-- **Status**: Open
+- **Fix**: `AcceptInviteService.execute` now wraps `StaffInvitationEntity.reconstitute(...)` in a try/catch (accept-invite.service.ts) — a reconstitution failure on a corrupt row is logged (`warn` + correlationId) and re-thrown as `InvalidInviteError` (404), masking the bad record rather than leaking a 500 and never revealing token validity. Regression test added: `masks a corrupt invitation row (failed reconstitution) as InvalidInviteError (404)` in `staff.services.test.ts`.
+- **Status**: Fixed
 
 ---
 

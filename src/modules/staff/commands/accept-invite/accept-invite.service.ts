@@ -45,22 +45,34 @@ export class AcceptInviteService {
       throw new InvalidInviteError('Invitation not found or already used');
     }
 
-    const invitation = StaffInvitationEntity.reconstitute({
-      id: invRecord.id,
-      createdAt: invRecord.createdAt,
-      updatedAt: invRecord.updatedAt,
-      props: {
-        vendorId: invRecord.vendorId,
-        vendorUserId: invRecord.vendorUserId,
-        invitedByUserId: invRecord.invitedByUserId,
-        phone: invRecord.phone,
-        tokenHash: invRecord.tokenHash,
-        status: invRecord.status,
-        expiresAt: invRecord.expiresAt,
-        acceptedAt: invRecord.acceptedAt,
-        revokedAt: invRecord.revokedAt,
-      },
-    });
+    // Reconstituting enforces domain invariants. A corrupt persisted row would
+    // throw a non-AppError (→ 500); mask it as an invalid invite (404) so a bad
+    // DB record never leaks as a server error and validity is never revealed.
+    let invitation: StaffInvitationEntity;
+    try {
+      invitation = StaffInvitationEntity.reconstitute({
+        id: invRecord.id,
+        createdAt: invRecord.createdAt,
+        updatedAt: invRecord.updatedAt,
+        props: {
+          vendorId: invRecord.vendorId,
+          vendorUserId: invRecord.vendorUserId,
+          invitedByUserId: invRecord.invitedByUserId,
+          phone: invRecord.phone,
+          tokenHash: invRecord.tokenHash,
+          status: invRecord.status,
+          expiresAt: invRecord.expiresAt,
+          acceptedAt: invRecord.acceptedAt,
+          revokedAt: invRecord.revokedAt,
+        },
+      });
+    } catch (error) {
+      this.logger.warn(
+        { err: error, invitationId: invRecord.id.toString(), correlationId },
+        'AcceptInviteService: corrupt invitation record failed reconstitution'
+      );
+      throw new InvalidInviteError('Invitation not found or already used');
+    }
 
     // 2. Load the membership.
     const membershipRecord = await this.membershipRepository.findById(invitation.vendorUserId);
