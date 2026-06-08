@@ -140,9 +140,12 @@ describe('InviteStaffService', () => {
       membershipRecord({ status: 'REMOVED', deletedAt: new Date() })
     );
     await service.execute(dto);
+    // Must run inside the surrounding $transaction (MAJOR-1): the tx client is
+    // forwarded as the third argument so a partial failure rolls the flip back.
     expect(membershipRepo.update).toHaveBeenCalledWith(
       5n,
-      expect.objectContaining({ status: 'INVITED' })
+      expect.objectContaining({ status: 'INVITED' }),
+      expect.anything()
     );
     expect(membershipRepo.insertWithPermissions).not.toHaveBeenCalled();
   });

@@ -35,7 +35,9 @@ const permissionsArrayField = z
   .describe('Granted staff permission keys');
 
 // Staff status the owner may set directly (active/disabled only).
-const settableStatusField = z.nativeEnum(VendorUserStatus, {
+// INVITED/REMOVED are lifecycle-internal: INVITED is set by the invite flow and
+// REMOVED only via DELETE, so reject them at the boundary rather than silently no-op.
+const settableStatusField = z.enum([VendorUserStatus.ACTIVE, VendorUserStatus.DISABLED], {
   errorMap: () => ({ message: 'status must be one of: ACTIVE, DISABLED' }),
 });
 

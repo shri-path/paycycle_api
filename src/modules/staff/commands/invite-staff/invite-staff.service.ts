@@ -99,15 +99,19 @@ export class InviteStaffService {
         if (existing && existing.status === VendorUserStatus.REMOVED) {
           membership = StaffMapper.toDomain(existing);
           membership.reinvite(grants, dto.areaRouteLabel);
-          await this.membershipRepository.update(existing.id, {
-            status: VendorUserStatus.INVITED,
-            areaRouteLabel: dto.areaRouteLabel,
-            invitedAt: new Date(),
-            joinedAt: null,
-            disabledAt: null,
-            removedAt: null,
-            deletedAt: null,
-          });
+          await this.membershipRepository.update(
+            existing.id,
+            {
+              status: VendorUserStatus.INVITED,
+              areaRouteLabel: dto.areaRouteLabel,
+              invitedAt: new Date(),
+              joinedAt: null,
+              disabledAt: null,
+              removedAt: null,
+              deletedAt: null,
+            },
+            tx
+          );
           await this.membershipRepository.replacePermissions(
             existing.id,
             StaffMapper.toGrantInputs(membership),
