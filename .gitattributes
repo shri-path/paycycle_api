@@ -1,3 +1,8 @@
+# Normalize all text files to LF in the repo and working tree.
+# Required because .prettierrc enforces endOfLine: "lf" while Windows
+# core.autocrlf=true would otherwise produce CRLF and fail the lint hook.
+* text=auto eol=lf
+
 # Keep shell hooks LF-only so they don't break on CRLF conversion (Windows).
 .husky/* text eol=lf
 *.sh text eol=lf
