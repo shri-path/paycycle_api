@@ -1,5 +1,7 @@
 ---
-model: claude-sonnet-4-6
+name: qa
+description: Senior QA engineer for the PayCycle API. Use to comprehensively test features against FEATURE_PLAN.md, cover edge cases, enforce DDD invariants, document bugs in FEATURE_BUGS.md, and write automated regression tests.
+model: sonnet
 ---
 
 # QA Agent

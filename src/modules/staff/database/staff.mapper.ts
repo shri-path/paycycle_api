@@ -1,10 +1,10 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, StaffInvitationChannel } from '@prisma/client';
 import { config } from '@/infrastructure/config';
 import { VendorMembershipEntity } from '../domain/vendor-membership.entity';
 import { StaffInvitationEntity } from '../domain/staff-invitation.entity';
 import { PermissionKeyVO } from '../domain/value-objects/permission-key.value-object';
 import { PermissionGrant, isOwnerRole } from '../domain/vendor-membership.types';
-import { StaffResponseDto, StaffRoleLabel, RoleContextDto } from '../staff.types';
+import { StaffResponseDto, StaffRoleLabel, RoleContextDto, InviteChannel } from '../staff.types';
 import { VendorMembershipRecord, StaffPermissionInput } from './vendor-membership.repository.port';
 
 export interface StaffEnrichment {
@@ -108,6 +108,20 @@ export class StaffMapper {
       updatedAt: props.updatedAt.toISOString(),
       // NEVER: tokenHash, passwordHash, deletedAt, removedAt, disabledAt
     };
+  }
+
+  /** Map the caller-facing invite channel to the Prisma enum (null = unspecified). */
+  static toInvitationChannel(channel: InviteChannel | null): StaffInvitationChannel | null {
+    if (channel === 'whatsapp') return StaffInvitationChannel.WHATSAPP;
+    if (channel === 'sms') return StaffInvitationChannel.SMS;
+    return null;
+  }
+
+  /** Map the Prisma invite channel enum back to the caller-facing label. */
+  static fromInvitationChannel(channel: StaffInvitationChannel | null): InviteChannel | null {
+    if (channel === StaffInvitationChannel.WHATSAPP) return 'whatsapp';
+    if (channel === StaffInvitationChannel.SMS) return 'sms';
+    return null;
   }
 
   static toRoleContext(entity: VendorMembershipEntity): RoleContextDto {

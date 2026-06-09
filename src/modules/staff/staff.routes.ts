@@ -18,21 +18,31 @@ import { StaffController } from './staff.controller';
 import { VendorMembershipRepository } from './database/vendor-membership.repository';
 import { StaffInvitationRepository } from './database/staff-invitation.repository';
 import { ListAssignmentStubAdapter } from './adapters/list-assignment-stub.adapter';
+import { ListAssignmentWriteStubAdapter } from './adapters/list-assignment-write-stub.adapter';
 import { SubscriptionLimitStubAdapter } from './adapters/subscription-limit-stub.adapter';
+import { StaffNotificationLogAdapter } from './adapters/staff-notification-log.adapter';
 import { SessionRevocationHandler } from './handlers/session-revocation.handler';
 import { InviteStaffService } from './commands/invite-staff/invite-staff.service';
 import { UpdateStaffService } from './commands/update-staff/update-staff.service';
 import { RemoveStaffService } from './commands/remove-staff/remove-staff.service';
 import { AcceptInviteService } from './commands/accept-invite/accept-invite.service';
+import { ResendInviteService } from './commands/resend-invite/resend-invite.service';
+import { UpdatePermissionsService } from './commands/update-permissions/update-permissions.service';
+import { AssignListService } from './commands/assign-list/assign-list.service';
+import { UnassignListService } from './commands/unassign-list/unassign-list.service';
 import { ListStaffService } from './queries/list-staff/list-staff.service';
 import { GetStaffService } from './queries/get-staff/get-staff.service';
 import { GetMyRoleService } from './queries/get-my-role/get-my-role.service';
 import {
   inviteStaffSchema,
   updateStaffSchema,
+  resendInviteSchema,
+  updatePermissionsSchema,
+  assignListSchema,
   listStaffQuerySchema,
   vendorIdParamSchema,
   staffIdParamSchema,
+  listIdParamSchema,
 } from './staff.validator';
 
 const isTest = process.env['NODE_ENV'] === 'test';
@@ -45,7 +55,9 @@ const sessionRepository = new SessionRepository();
 const vendorUserRepository = new VendorUserRepository();
 
 const listAssignmentPort = new ListAssignmentStubAdapter(logger);
+const listAssignmentWritePort = new ListAssignmentWriteStubAdapter(logger);
 const subscriptionLimitPort = new SubscriptionLimitStubAdapter(membershipRepository);
+const notificationPort = new StaffNotificationLogAdapter(logger);
 const auditLogger = new AuditLogger(logger);
 const sessionRevocation = new SessionRevocationHandler(sessionRepository, logger);
 
@@ -56,11 +68,13 @@ const inviteStaffService = new InviteStaffService(
   invitationRepository,
   userRepository,
   subscriptionLimitPort,
+  notificationPort,
   auditLogger,
   logger
 );
 const updateStaffService = new UpdateStaffService(
   membershipRepository,
+  userRepository,
   sessionRevocation,
   auditLogger,
   logger
@@ -73,7 +87,34 @@ const removeStaffService = new RemoveStaffService(
   auditLogger,
   logger
 );
-const listStaffService = new ListStaffService(membershipRepository, listAssignmentPort, logger);
+const resendInviteService = new ResendInviteService(
+  membershipRepository,
+  invitationRepository,
+  notificationPort,
+  auditLogger,
+  logger
+);
+const updatePermissionsService = new UpdatePermissionsService(
+  membershipRepository,
+  auditLogger,
+  logger
+);
+const assignListService = new AssignListService(
+  membershipRepository,
+  listAssignmentWritePort,
+  logger
+);
+const unassignListService = new UnassignListService(
+  membershipRepository,
+  listAssignmentWritePort,
+  logger
+);
+const listStaffService = new ListStaffService(
+  membershipRepository,
+  listAssignmentPort,
+  subscriptionLimitPort,
+  logger
+);
 const getStaffService = new GetStaffService(membershipRepository, listAssignmentPort, logger);
 const getMyRoleService = new GetMyRoleService(membershipRepository, logger);
 
@@ -92,6 +133,10 @@ const controller = new StaffController(
   inviteStaffService,
   updateStaffService,
   removeStaffService,
+  resendInviteService,
+  updatePermissionsService,
+  assignListService,
+  unassignListService,
   listStaffService,
   getStaffService,
   getMyRoleService
@@ -178,6 +223,50 @@ router.delete(
   identifyUserRole('vendorId'),
   requireOwnerRole(),
   asyncHandler(controller.remove)
+);
+
+// POST /vendors/:vendorId/staff/:staffId/resend-invitation — owner only
+router.post(
+  '/:vendorId/staff/:staffId/resend-invitation',
+  authenticateToken,
+  inviteLimiter,
+  validate(staffIdParamSchema, 'params'),
+  validate(resendInviteSchema, 'body'),
+  identifyUserRole('vendorId'),
+  requireOwnerRole(),
+  asyncHandler(controller.resend)
+);
+
+// PATCH /vendors/:vendorId/staff/:staffId/permissions — owner only
+router.patch(
+  '/:vendorId/staff/:staffId/permissions',
+  authenticateToken,
+  validate(staffIdParamSchema, 'params'),
+  validate(updatePermissionsSchema, 'body'),
+  identifyUserRole('vendorId'),
+  requireOwnerRole(),
+  asyncHandler(controller.updatePermissions)
+);
+
+// POST /vendors/:vendorId/staff/:staffId/assign-list — owner only (gated until US-005)
+router.post(
+  '/:vendorId/staff/:staffId/assign-list',
+  authenticateToken,
+  validate(staffIdParamSchema, 'params'),
+  validate(assignListSchema, 'body'),
+  identifyUserRole('vendorId'),
+  requireOwnerRole(),
+  asyncHandler(controller.assignList)
+);
+
+// DELETE /vendors/:vendorId/staff/:staffId/unassign-list/:listId — owner only (gated until US-005)
+router.delete(
+  '/:vendorId/staff/:staffId/unassign-list/:listId',
+  authenticateToken,
+  validate(listIdParamSchema, 'params'),
+  identifyUserRole('vendorId'),
+  requireOwnerRole(),
+  asyncHandler(controller.unassignList)
 );
 
 export default router;

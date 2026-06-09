@@ -22,6 +22,7 @@ import { PermissionGrant, STAFF_ROLE_NAME } from '../../domain/vendor-membership
 import { StaffInvitedEvent } from '../../domain/events/staff-invited.domain-event';
 import { SubscriptionLimitError } from '../../domain/staff.errors';
 import { SubscriptionLimitPort } from '../../ports/subscription-limit.port';
+import { StaffNotificationPort } from '../../ports/staff-notification.port';
 import { InviteStaffResponseDto } from '../../staff.types';
 import { InviteStaffRequestDto } from './invite-staff.request.dto';
 
@@ -31,6 +32,7 @@ export class InviteStaffService {
     private readonly invitationRepository: IStaffInvitationRepository,
     private readonly userRepository: IUserRepository,
     private readonly subscriptionLimitPort: SubscriptionLimitPort,
+    private readonly notificationPort: StaffNotificationPort,
     private readonly auditLogger: AuditPort,
     private readonly logger: Logger
   ) {}
@@ -159,6 +161,9 @@ export class InviteStaffService {
             tokenHash: invProps.tokenHash,
             status: invProps.status,
             expiresAt: invProps.expiresAt,
+            sentVia: StaffMapper.toInvitationChannel(dto.sendVia),
+            sentCount: 1,
+            lastSentAt: new Date(),
           },
           tx
         );
@@ -199,6 +204,20 @@ export class InviteStaffService {
       metadata: { phone: dto.phone, permissions: dto.permissions },
       ipAddress: dto.ip,
       userAgent: dto.userAgent,
+      correlationId,
+    });
+
+    // 5b. Deliver the invite over the chosen channel (log-and-continue stub).
+    const vendor = await prisma.vendor.findUnique({
+      where: { id: dto.vendorId },
+      select: { name: true },
+    });
+    await this.notificationPort.sendStaffInvite({
+      phone: dto.phone,
+      vendorName: vendor?.name ?? 'PayCycle',
+      inviteUrl: inviteMeta.inviteUrl,
+      channel: dto.sendVia ?? 'whatsapp',
+      expiresAt: invitationEntity.expiresAt,
       correlationId,
     });
 

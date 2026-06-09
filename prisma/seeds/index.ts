@@ -238,6 +238,10 @@ async function seed() {
               tokenHash: devTokenHash,
               status: 'PENDING',
               expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+              // US-004: exercise the resend path — this invite was re-sent over WhatsApp.
+              sentVia: 'WHATSAPP',
+              sentCount: 2,
+              lastSentAt: new Date(),
             },
           });
         }

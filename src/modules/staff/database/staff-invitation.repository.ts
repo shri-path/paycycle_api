@@ -43,6 +43,16 @@ export class StaffInvitationRepository implements IStaffInvitationRepository {
     });
   }
 
+  async findLatestByMembership(
+    vendorUserId: bigint,
+    tx?: PrismaTransaction
+  ): Promise<StaffInvitationRecord | null> {
+    return this.getClient(tx).findFirst({
+      where: { vendorUserId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
   async update(
     id: bigint,
     data: InvitationUpdateData,

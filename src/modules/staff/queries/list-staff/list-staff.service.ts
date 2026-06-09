@@ -4,7 +4,8 @@ import { ListQueryParams } from '@/common/api-wrapper/types';
 import { IVendorMembershipRepository } from '../../database/vendor-membership.repository.port';
 import { StaffMapper } from '../../database/staff.mapper';
 import { ListAssignmentPort } from '../../ports/list-assignment.port';
-import { StaffResponseDto } from '../../staff.types';
+import { SubscriptionLimitPort } from '../../ports/subscription-limit.port';
+import { StaffResponseDto, StaffLimitsDto } from '../../staff.types';
 
 const ALLOWED_FIELDS = ['status', 'areaRouteLabel', 'createdAt', 'joinedAt', 'invitedAt'];
 
@@ -16,12 +17,14 @@ export interface ListStaffRequestDto {
 export interface ListStaffResult {
   data: StaffResponseDto[];
   meta: { page: number; limit: number; total: number; totalPages: number };
+  limits: StaffLimitsDto;
 }
 
 export class ListStaffService {
   constructor(
     private readonly membershipRepository: IVendorMembershipRepository,
     private readonly listAssignmentPort: ListAssignmentPort,
+    private readonly subscriptionLimitPort: SubscriptionLimitPort,
     private readonly logger: Logger
   ) {}
 
@@ -48,6 +51,17 @@ export class ListStaffService {
       })
     );
 
+    // Subscription staff-limit snapshot (OQ-7 — stub reports unlimited until US-009).
+    const [maxStaff, currentActive] = await Promise.all([
+      this.subscriptionLimitPort.getStaffLimit(dto.vendorId),
+      this.subscriptionLimitPort.getCurrentStaffCount(dto.vendorId),
+    ]);
+    const limits: StaffLimitsDto = {
+      maxStaff,
+      currentActive,
+      canAddMore: maxStaff === null || currentActive < maxStaff,
+    };
+
     this.logger.info(
       { vendorId: dto.vendorId.toString(), total },
       'ListStaffService: staff listed'
@@ -61,6 +75,7 @@ export class ListStaffService {
         total,
         totalPages: Math.ceil(total / parsed.take),
       },
+      limits,
     };
   }
 }
