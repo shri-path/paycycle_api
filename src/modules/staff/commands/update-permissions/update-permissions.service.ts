@@ -1,12 +1,7 @@
 import crypto from 'crypto';
 import { Logger } from '@/infrastructure/logger/logger';
 import { prisma, PrismaTransaction } from '@/infrastructure/database/prisma.client';
-import {
-  AppError,
-  ForbiddenError,
-  InternalServerError,
-  NotFoundError,
-} from '@/common/errors/app-error';
+import { AppError, InternalServerError, NotFoundError } from '@/common/errors/app-error';
 import { AuditPort } from '@/common/audit/audit.port';
 import { AuditAction } from '@/common/audit/audit-action.enum';
 import { IVendorMembershipRepository } from '../../database/vendor-membership.repository.port';
@@ -33,18 +28,29 @@ export class UpdatePermissionsService {
 
   async execute(dto: UpdatePermissionsRequestDto): Promise<UpdatePermissionsResponseDto> {
     const correlationId = crypto.randomUUID();
+    this.logger.info(
+      { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString(), correlationId },
+      'UpdatePermissionsService: update attempt'
+    );
 
     // 1. Load + multi-tenant guard (mask wrong vendor as 404).
     const record = await this.membershipRepository.findById(dto.staffId);
     if (!record || record.vendorId !== dto.vendorId || record.deletedAt !== null) {
+      this.logger.warn(
+        { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString(), correlationId },
+        'UpdatePermissionsService: staff not found or tenant mismatch'
+      );
       throw new NotFoundError('Staff member not found');
     }
 
     const entity = StaffMapper.toDomain(record);
 
-    // 2. Owner self-guard (OQ-6): staff endpoints never act on an owner membership.
+    // 2. Owner is all-allow — grants are meaningless. No-op + return the full
+    //    all-allow state (plan N2: owner target is idempotent, not an error).
     if (entity.isOwner) {
-      throw new ForbiddenError('Cannot modify the owner membership');
+      return {
+        permissions: PermissionKeyVO.all().map((key) => ({ key, granted: true })),
+      };
     }
 
     // 3. Merge the grant-map onto the current grants (absent keys unchanged).
@@ -92,11 +98,6 @@ export class UpdatePermissionsService {
       userAgent: dto.userAgent,
       correlationId,
     });
-
-    this.logger.info(
-      { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString(), correlationId },
-      'UpdatePermissionsService: permissions updated'
-    );
 
     // 5. Return the full 3-key grant state.
     const grantedSet = new Set(entity.grantedPermissions());

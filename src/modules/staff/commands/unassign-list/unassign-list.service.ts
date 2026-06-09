@@ -22,17 +22,21 @@ export class UnassignListService {
   ) {}
 
   async execute(dto: UnassignListRequestDto): Promise<UnassignListResponseDto> {
+    this.logger.info(
+      { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString() },
+      'UnassignListService: unassign attempt'
+    );
+
     const record = await this.membershipRepository.findById(dto.staffId);
     if (!record || record.vendorId !== dto.vendorId || record.deletedAt !== null) {
+      this.logger.warn(
+        { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString() },
+        'UnassignListService: staff not found or tenant mismatch'
+      );
       throw new NotFoundError('Staff member not found');
     }
 
     await this.listWritePort.unassign(dto.staffId, dto.listId);
-
-    this.logger.info(
-      { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString() },
-      'UnassignListService: list unassigned'
-    );
 
     return {
       staffId: dto.staffId.toString(),

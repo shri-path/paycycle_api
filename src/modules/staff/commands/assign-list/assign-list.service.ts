@@ -18,8 +18,17 @@ export class AssignListService {
   ) {}
 
   async execute(dto: AssignListRequestDto): Promise<AssignListResponseDto> {
+    this.logger.info(
+      { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString() },
+      'AssignListService: assign attempt'
+    );
+
     const record = await this.membershipRepository.findById(dto.staffId);
     if (!record || record.vendorId !== dto.vendorId || record.deletedAt !== null) {
+      this.logger.warn(
+        { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString() },
+        'AssignListService: staff not found or tenant mismatch'
+      );
       throw new NotFoundError('Staff member not found');
     }
 
@@ -30,11 +39,6 @@ export class AssignListService {
       dto.supplyListId,
       dto.isPrimary,
       dto.performedByUserId
-    );
-
-    this.logger.info(
-      { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString() },
-      'AssignListService: list assigned'
     );
 
     return {

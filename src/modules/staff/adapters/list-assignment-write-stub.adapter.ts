@@ -34,7 +34,7 @@ export class ListAssignmentWriteStubAdapter implements ListAssignmentWritePort {
   }
 
   private logUnavailable(op: string, staffMembershipId: bigint, listId: bigint): void {
-    this.logger.info(
+    this.logger.warn(
       { op, staffMembershipId: staffMembershipId.toString(), listId: listId.toString() },
       'ListAssignmentWriteStubAdapter: feature not available (US-005 not built)'
     );

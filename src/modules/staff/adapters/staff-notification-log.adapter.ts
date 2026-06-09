@@ -13,6 +13,9 @@ import { StaffNotificationPort, StaffInviteNotification } from '../ports/staff-n
 export class StaffNotificationLogAdapter implements StaffNotificationPort {
   constructor(private readonly logger: Logger) {}
 
+  // Not `async`: the body is synchronous, and the project's require-await rule
+  // forbids an async method with no await. Returning Promise.resolve() satisfies
+  // the port's Promise<void> contract (log-and-continue — never throws).
   sendStaffInvite(input: StaffInviteNotification): Promise<void> {
     try {
       this.logger.info(

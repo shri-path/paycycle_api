@@ -31,20 +31,36 @@ export class ResendInviteService {
 
   async execute(dto: ResendInviteRequestDto): Promise<ResendInviteResponseDto> {
     const correlationId = crypto.randomUUID();
+    this.logger.info(
+      { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString(), correlationId },
+      'ResendInviteService: resend attempt'
+    );
 
     // 1. Load + multi-tenant guard (mask wrong vendor / removed as 404).
     const record = await this.membershipRepository.findById(dto.staffId);
     if (!record || record.vendorId !== dto.vendorId || record.deletedAt !== null) {
+      this.logger.warn(
+        { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString(), correlationId },
+        'ResendInviteService: staff not found or tenant mismatch'
+      );
       throw new NotFoundError('Staff member not found');
     }
 
     // 2. Only a still-pending invitation can be resent.
     if (record.status !== VendorUserStatus.INVITED) {
+      this.logger.warn(
+        { staffId: dto.staffId.toString(), status: record.status, correlationId },
+        'ResendInviteService: resend blocked — membership is not INVITED'
+      );
       throw new InvalidStatusTransitionError('Only pending invitations can be resent');
     }
 
     const phone = record.phone ?? record.user?.phone ?? null;
     if (!phone) {
+      this.logger.warn(
+        { staffId: dto.staffId.toString(), correlationId },
+        'ResendInviteService: invited staff has no phone on record'
+      );
       throw new InternalServerError('Invited staff member has no phone on record.');
     }
 
@@ -126,11 +142,6 @@ export class ResendInviteService {
       userAgent: dto.userAgent,
       correlationId,
     });
-
-    this.logger.info(
-      { vendorId: dto.vendorId.toString(), staffId: dto.staffId.toString(), correlationId },
-      'ResendInviteService: invitation resent'
-    );
 
     return {
       inviteUrl: inviteMeta.inviteUrl,
