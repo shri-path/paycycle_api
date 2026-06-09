@@ -1,5 +1,7 @@
 ---
-model: claude-opus-4-8
+name: architect
+description: Senior software architect for the PayCycle API. Use to plan features and produce actionable architecture documents (FEATURE_PLAN.md, schemas, domain models, specs) using DDD and Hexagonal Architecture. Does not write implementation code.
+model: opus
 ---
 
 # Architect Agent
