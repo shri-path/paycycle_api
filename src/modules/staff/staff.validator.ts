@@ -64,6 +64,16 @@ export const staffIdParamSchema = z
 
 export type StaffIdParam = z.infer<typeof staffIdParamSchema>;
 
+export const listIdParamSchema = z
+  .object({
+    vendorId: bigIntIdString,
+    staffId: bigIntIdString,
+    listId: bigIntIdString,
+  })
+  .passthrough();
+
+export type ListIdParam = z.infer<typeof listIdParamSchema>;
+
 // ============================================================
 // Mutation schemas (.strict — declare EVERY field the controller reads)
 // ============================================================
@@ -84,6 +94,7 @@ export type InviteStaffInput = z.infer<typeof inviteStaffSchema>;
 /** PATCH /vendors/:vendorId/staff/:staffId — partial update */
 export const updateStaffSchema = z
   .object({
+    name: nameField.optional(),
     status: settableStatusField.optional(),
     areaRouteLabel: areaRouteLabelField.nullable().optional(),
     permissions: permissionsArrayField.optional(),
@@ -94,6 +105,47 @@ export const updateStaffSchema = z
   });
 
 export type UpdateStaffInput = z.infer<typeof updateStaffSchema>;
+
+/** POST /vendors/:vendorId/staff/:staffId/resend-invitation */
+export const resendInviteSchema = z
+  .object({
+    sendVia: z.enum(['whatsapp', 'sms']).optional(),
+  })
+  .strict();
+
+export type ResendInviteInput = z.infer<typeof resendInviteSchema>;
+
+/**
+ * PATCH /vendors/:vendorId/staff/:staffId/permissions — grant-map.
+ * 1–3 entries, one per staff-grantable PermissionKey.
+ */
+export const updatePermissionsSchema = z
+  .object({
+    permissions: z
+      .array(
+        z
+          .object({
+            key: permissionKeyField,
+            granted: z.boolean(),
+          })
+          .strict()
+      )
+      .min(1, 'At least one permission grant is required')
+      .max(3, 'Too many permission grants'),
+  })
+  .strict();
+
+export type UpdatePermissionsInput = z.infer<typeof updatePermissionsSchema>;
+
+/** POST /vendors/:vendorId/staff/:staffId/assign-list (gated until US-005) */
+export const assignListSchema = z
+  .object({
+    supplyListId: bigIntIdString,
+    isPrimary: z.boolean().optional(),
+  })
+  .strict();
+
+export type AssignListInput = z.infer<typeof assignListSchema>;
 
 /** POST /auth/accept-invite (public) */
 export const acceptInviteSchema = z

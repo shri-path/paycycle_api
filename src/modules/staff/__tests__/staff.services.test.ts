@@ -26,6 +26,7 @@ jest.mock('@/infrastructure/database/prisma.client', () => ({
   prisma: {
     $transaction: jest.fn((cb: any) => cb({})),
     role: { findFirst: jest.fn() },
+    vendor: { findUnique: jest.fn() },
   },
 }));
 jest.mock('@/modules/auth/utils/password.util', () => ({
@@ -72,6 +73,7 @@ describe('InviteStaffService', () => {
   let invitationRepo: any;
   let userRepo: any;
   let subscriptionPort: any;
+  let notificationPort: any;
   let audit: any;
   let service: InviteStaffService;
 
@@ -79,6 +81,7 @@ describe('InviteStaffService', () => {
     // resetMocks:true wipes inline factory implementations — restore them here.
     prisma.$transaction.mockImplementation((cb: any) => cb({}));
     prisma.role.findFirst.mockResolvedValue({ id: 3n, name: 'vendor_staff' });
+    prisma.vendor.findUnique.mockResolvedValue({ name: 'Test Vendor' });
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     require('@/modules/auth/utils/password.util').passwordUtil.hash.mockResolvedValue('$2b$10$h');
     membershipRepo = {
@@ -100,12 +103,14 @@ describe('InviteStaffService', () => {
       getStaffLimit: jest.fn().mockResolvedValue(null),
       getCurrentStaffCount: jest.fn().mockResolvedValue(0),
     };
+    notificationPort = { sendStaffInvite: jest.fn().mockResolvedValue(undefined) };
     audit = { log: jest.fn() };
     service = new InviteStaffService(
       membershipRepo,
       invitationRepo,
       userRepo,
       subscriptionPort,
+      notificationPort,
       audit,
       logger
     );
@@ -119,6 +124,7 @@ describe('InviteStaffService', () => {
     name: 'Asha',
     areaRouteLabel: 'Route A',
     permissions: [PermissionKey.MARK_DELIVERIES],
+    sendVia: null,
     ip: null,
     userAgent: null,
   };
@@ -159,6 +165,7 @@ describe('InviteStaffService', () => {
 
 describe('UpdateStaffService', () => {
   let membershipRepo: any;
+  let userRepo: any;
   let sessionRevocation: any;
   let audit: any;
   let service: UpdateStaffService;
@@ -169,10 +176,11 @@ describe('UpdateStaffService', () => {
       update: jest.fn(),
       replacePermissions: jest.fn(),
     };
+    userRepo = { update: jest.fn() };
     prisma.$transaction.mockImplementation((cb: any) => cb({}));
     sessionRevocation = { revokeAllForUser: jest.fn() };
     audit = { log: jest.fn() };
-    service = new UpdateStaffService(membershipRepo, sessionRevocation, audit, logger);
+    service = new UpdateStaffService(membershipRepo, userRepo, sessionRevocation, audit, logger);
   });
 
   const base = {

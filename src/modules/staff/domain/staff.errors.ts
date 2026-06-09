@@ -39,3 +39,14 @@ export class SubscriptionLimitError extends AppError {
     super(message, 451, 'SUBSCRIPTION_LIMIT', true);
   }
 }
+
+/**
+ * A capability is gated behind an unbuilt module (e.g. supply-list assignment
+ * before US-005 ships). 503 Service Unavailable. Reached only after the auth →
+ * owner → tenant guards pass, so it never leaks resource existence.
+ */
+export class FeatureNotAvailableError extends AppError {
+  constructor(message = 'This feature is not available yet') {
+    super(message, 503, 'FEATURE_NOT_AVAILABLE', true);
+  }
+}

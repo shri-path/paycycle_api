@@ -19,6 +19,11 @@ export interface IStaffInvitationRepository {
     vendorUserId: bigint,
     tx?: PrismaTransaction
   ): Promise<StaffInvitationRecord | null>;
+  /** Most recent invitation for a membership (any status) — drives resend sent_count. */
+  findLatestByMembership(
+    vendorUserId: bigint,
+    tx?: PrismaTransaction
+  ): Promise<StaffInvitationRecord | null>;
   update(
     id: bigint,
     data: InvitationUpdateData,

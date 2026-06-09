@@ -265,6 +265,14 @@ enum StaffInvitationStatus {
   @@map("staff_invitation_status")
 }
 
+// Channel the invite was (most recently) delivered through (US-004 — WhatsApp/SMS).
+enum StaffInvitationChannel {
+  WHATSAPP
+  SMS
+
+  @@map("invitation_channel")
+}
+
 model StaffInvitation {
   id BigInt @id @default(autoincrement())
 
@@ -279,6 +287,11 @@ model StaffInvitation {
   expiresAt  DateTime  @map("expires_at")
   acceptedAt DateTime? @map("accepted_at")
   revokedAt  DateTime? @map("revoked_at")
+
+  // US-004 — delivery/channel + resend tracking (invitation-delivery metadata).
+  sentVia    StaffInvitationChannel? @map("sent_via")
+  sentCount  Int                     @default(1) @map("sent_count")
+  lastSentAt DateTime                @default(now()) @map("last_sent_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

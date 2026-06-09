@@ -10,6 +10,7 @@ import {
 } from '@/common/errors/app-error';
 import { AuditPort } from '@/common/audit/audit.port';
 import { AuditAction } from '@/common/audit/audit-action.enum';
+import { IUserRepository } from '@/modules/auth/database/user.repository.port';
 import { IVendorMembershipRepository } from '../../database/vendor-membership.repository.port';
 import { StaffMapper } from '../../database/staff.mapper';
 import { PermissionGrant } from '../../domain/vendor-membership.types';
@@ -20,6 +21,7 @@ import { UpdateStaffRequestDto } from './update-staff.request.dto';
 export class UpdateStaffService {
   constructor(
     private readonly membershipRepository: IVendorMembershipRepository,
+    private readonly userRepository: IUserRepository,
     private readonly sessionRevocation: SessionRevocationHandler,
     private readonly auditLogger: AuditPort,
     private readonly logger: Logger
@@ -62,6 +64,11 @@ export class UpdateStaffService {
         // 4. Area label.
         if (dto.areaRouteLabel !== undefined) {
           entity.updateArea(dto.areaRouteLabel);
+        }
+
+        // 4b. Display name → linked User.name.
+        if (dto.name !== undefined) {
+          await this.userRepository.update(record.userId, { name: dto.name }, tx);
         }
 
         // 5. Permission grants (replace).
