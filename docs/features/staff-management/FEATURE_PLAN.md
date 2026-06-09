@@ -171,7 +171,7 @@ Single additive migration `prisma/migrations/<ts>_us-004-invitation-channel/` �
 ## Business Rules
 
 ### Invariants (reuse existing entity guards)
-- **Resend (N1):** allowed only when membership `status = INVITED`. ACTIVE/DISABLED/REMOVED → `InvalidStatusTransitionError` (422) "Only pending invitations can be resent." Re-issuing rotates the token (old PENDING invite → REVOKED, single new PENDING).
+- **Resend (N1):** allowed only when membership `status = INVITED`. **ACTIVE/DISABLED → `InvalidStatusTransitionError` (422)** "Only pending invitations can be resent." **REMOVED → `NotFoundError` (404)** — a removed membership is soft-deleted (`deletedAt` set), so the tenant/existence guard masks it as 404 *before* the status check, consistent with the module-wide soft-delete masking convention (never reveal a removed member exists). *(QA BUG-001: the 404 for REMOVED is intended behavior, not the 422 an earlier draft implied.)* Re-issuing rotates the token (old PENDING invite → REVOKED, single new PENDING).
 - **Permissions (N2):** grants only meaningful for STAFF; owner target → no-op (entity already returns early in `setPermissions`). Invalid key → Zod 400. Emits `StaffPermissionsChangedEvent` (already wired) → Audit.
 - **Assign/unassign (N3/N4):** owner-only; `:staffId` must be an active member of `:vendorId` (else 404). Until US-005: `FeatureNotAvailableError` (503) **after** the tenant/role guards pass (so the 503 only reaches authorized owners, never leaks existence).
 - **Name edit:** `name` 1–100 chars; updates `User.name` for the membership's linked user in the same transaction as other staff fields.
