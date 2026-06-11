@@ -69,7 +69,6 @@ export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export const resetPasswordSchema = z
   .object({
     phone: phoneField,
-    resetToken: z.string().min(1, 'Reset token is required'),
     otpCode: z.string().regex(/^[0-9]{6}$/, 'OTP must be exactly 6 digits'),
     newPassword: strongPasswordField,
   })

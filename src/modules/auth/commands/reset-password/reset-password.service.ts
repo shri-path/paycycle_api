@@ -1,11 +1,6 @@
 import crypto from 'crypto';
 import { Logger } from '@/infrastructure/logger/logger';
-import {
-  AppError,
-  BadRequestError,
-  InternalServerError,
-  NotFoundError,
-} from '@/common/errors/app-error';
+import { AppError, BadRequestError, InternalServerError } from '@/common/errors/app-error';
 import { prisma, PrismaTransaction } from '@/infrastructure/database/prisma.client';
 import { IUserRepository } from '../../database/user.repository.port';
 import { PasswordResetTokenRepository, SessionRepository } from '../../database/session.repository';
@@ -27,21 +22,20 @@ export class ResetPasswordService {
 
     const correlationId = crypto.randomUUID();
 
-    // 1. Find valid token
-    const tokenRecord = await this.resetTokenRepository.findValid({
-      resetToken: dto.resetToken,
-      otpCode: dto.otpCode,
-    });
-    if (!tokenRecord) {
+    // 1. Resolve the user by phone. Use a generic error so the endpoint does not
+    //    reveal whether the phone is registered.
+    const userRecord = await this.userRepository.findByPhone(dto.phone);
+    if (!userRecord || userRecord.deletedAt !== null) {
       throw new BadRequestError('Invalid or expired OTP');
     }
 
-    // 2. Load user and confirm phone matches
-    const userRecord = await this.userRepository.findById(tokenRecord.userId);
-    if (!userRecord) {
-      throw new NotFoundError('User associated with this reset token was not found');
-    }
-    if (userRecord.phone !== dto.phone) {
+    // 2. Find a valid OTP scoped to this user. The OTP is the single secret
+    //    delivered via SMS — there is no separate client-held reset token.
+    const tokenRecord = await this.resetTokenRepository.findValidByUserId({
+      userId: userRecord.id,
+      otpCode: dto.otpCode,
+    });
+    if (!tokenRecord) {
       throw new BadRequestError('Invalid or expired OTP');
     }
 
