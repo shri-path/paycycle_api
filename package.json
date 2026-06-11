@@ -4,6 +4,7 @@
   "description": "Enterprise-grade multi-tenant REST API with Node.js, Express, TypeScript, and PostgreSQL",
   "main": "dist/server.js",
   "scripts": {
+    "predev": "node scripts/free-port.mjs",
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
