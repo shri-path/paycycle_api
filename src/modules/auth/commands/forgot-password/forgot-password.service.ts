@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Logger } from '@/infrastructure/logger/logger';
+import { isProduction } from '@/infrastructure/config';
 import { IUserRepository } from '../../database/user.repository.port';
 import { PasswordResetTokenRepository } from '../../database/session.repository';
 import { SmsNotificationPort } from '../../ports/sms-notification.port';
@@ -13,7 +14,7 @@ export class ForgotPasswordService {
     private readonly logger: Logger
   ) {}
 
-  async execute(dto: ForgotPasswordRequestDto): Promise<{ message: string }> {
+  async execute(dto: ForgotPasswordRequestDto): Promise<{ message: string; devOtp?: string }> {
     this.logger.info({ phone: dto.phone }, 'ForgotPasswordService: request received');
 
     // Phone enumeration prevention — always return same response
@@ -43,6 +44,12 @@ export class ForgotPasswordService {
 
     this.logger.info({ userId: userRecord.id.toString() }, 'ForgotPasswordService: OTP generated');
 
-    return { message: 'If an account with this phone number exists, an OTP has been sent.' };
+    // Convenience for non-production environments only: surface the OTP so QA / dev
+    // clients can complete the reset flow without real SMS delivery. NEVER leaked in
+    // production — there the OTP is only obtainable via the SMS channel.
+    return {
+      message: 'If an account with this phone number exists, an OTP has been sent.',
+      ...(isProduction() ? {} : { devOtp: otp }),
+    };
   }
 }

@@ -199,11 +199,9 @@ export class AuthController {
    *         application/json:
    *           schema:
    *             type: object
-   *             required: [phone, resetToken, otpCode, newPassword]
+   *             required: [phone, otpCode, newPassword]
    *             properties:
    *               phone:
-   *                 type: string
-   *               resetToken:
    *                 type: string
    *               otpCode:
    *                 type: string
@@ -220,13 +218,11 @@ export class AuthController {
     try {
       const body = req.body as {
         phone: string;
-        resetToken: string;
         otpCode: string;
         newPassword: string;
       };
       const result = await this.resetPasswordService.execute({
         phone: body.phone,
-        resetToken: body.resetToken,
         otpCode: body.otpCode,
         newPassword: body.newPassword,
       });

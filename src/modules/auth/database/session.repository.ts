@@ -101,17 +101,25 @@ export class PasswordResetTokenRepository {
     });
   }
 
-  async findValid(params: {
-    resetToken: string;
+  /**
+   * Find a valid (unused, unexpired) reset token for a user by OTP code.
+   * Scoped to userId so a 6-digit OTP collision across users cannot match the
+   * wrong record. The OTP is the single secret delivered out-of-band via SMS;
+   * there is no separate client-held reset token. Most recent first, so a fresh
+   * OTP supersedes an older outstanding one.
+   */
+  async findValidByUserId(params: {
+    userId: bigint;
     otpCode: string;
   }): Promise<{ id: bigint; userId: bigint } | null> {
     const record = await prisma.passwordResetToken.findFirst({
       where: {
-        resetToken: params.resetToken,
+        userId: params.userId,
         otpCode: params.otpCode,
         isUsed: false,
         expiresAt: { gt: new Date() },
       },
+      orderBy: { createdAt: 'desc' },
       select: { id: true, userId: true },
     });
     return record;

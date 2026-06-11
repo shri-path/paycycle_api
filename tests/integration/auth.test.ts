@@ -242,7 +242,6 @@ describe('POST /api/v1/auth/reset-password', () => {
   it('400 — wrong OTP code', async () => {
     const res = await request(app).post('/api/v1/auth/reset-password').send({
       phone: TEST_PHONE,
-      resetToken: 'fake-reset-token',
       otpCode: '000000',
       newPassword: 'NewPass@123',
     });
@@ -252,11 +251,65 @@ describe('POST /api/v1/auth/reset-password', () => {
   it('400 — invalid otpCode format (not 6 digits)', async () => {
     const res = await request(app).post('/api/v1/auth/reset-password').send({
       phone: TEST_PHONE,
-      resetToken: 'some-token',
       otpCode: 'abcdef',
       newPassword: 'NewPass@123',
     });
     expect(res.status).toBe(400);
+  });
+
+  it('400 — unknown fields rejected (strict schema, e.g. legacy resetToken)', async () => {
+    const res = await request(app).post('/api/v1/auth/reset-password').send({
+      phone: TEST_PHONE,
+      otpCode: '123456',
+      newPassword: 'NewPass@123',
+      resetToken: 'legacy-field',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('200 — valid OTP resets password and lets the user log in (no resetToken needed)', async () => {
+    // Snapshot the original hash so later test blocks that log in with the
+    // original password are unaffected by this destructive reset.
+    const before = await prisma.user.findFirst({ where: { phone: TEST_PHONE } });
+    const originalHash = before!.passwordHash;
+
+    // Request an OTP, then read it back from the DB (SMS delivery is a stub).
+    const forgotRes = await request(app)
+      .post('/api/v1/auth/forgot-password')
+      .send({ phone: TEST_PHONE });
+    expect(forgotRes.status).toBe(200);
+
+    const tokenRow = await prisma.passwordResetToken.findFirst({
+      where: { user: { phone: TEST_PHONE }, isUsed: false },
+      orderBy: { createdAt: 'desc' },
+    });
+    expect(tokenRow).not.toBeNull();
+
+    const newPassword = 'ResetPass@456';
+    const resetRes = await request(app).post('/api/v1/auth/reset-password').send({
+      phone: TEST_PHONE,
+      otpCode: tokenRow!.otpCode,
+      newPassword,
+    });
+    expect(resetRes.status).toBe(200);
+
+    // New password works…
+    const loginNew = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phone: TEST_PHONE, password: newPassword });
+    expect(loginNew.status).toBe(200);
+
+    // …old password no longer does.
+    const loginOld = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ phone: TEST_PHONE, password: 'Test@123x' });
+    expect(loginOld.status).toBe(401);
+
+    // Restore the original hash for subsequent test blocks.
+    await prisma.user.update({
+      where: { id: before!.id },
+      data: { passwordHash: originalHash },
+    });
   });
 });
 
