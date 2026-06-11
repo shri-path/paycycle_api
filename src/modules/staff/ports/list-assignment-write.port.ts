@@ -1,8 +1,7 @@
 /**
- * Write side of supply-list assignment (Supply Lists context — US-005, not yet
- * built). Kept separate from the read-only ListAssignmentPort so the stable US-002
- * read stub is untouched. Until US-005 ships, a fail-closed stub backs this port
- * and every method throws FeatureNotAvailableError (503).
+ * Write side of supply-list assignment (Supply Lists context — US-005). Kept
+ * separate from the read-only ListAssignmentPort so the two concerns evolve
+ * independently. Backed by the real SupplyListAssignmentWriteAdapter (US-005).
  */
 export interface ListAssignmentWritePort {
   assign(

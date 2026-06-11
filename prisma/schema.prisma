@@ -32,10 +32,13 @@ model User {
   updatedAt   DateTime  @updatedAt @map("updated_at")
   deletedAt   DateTime? @map("deleted_at")
 
-  sessions       UserSession[]
-  passwordResets PasswordResetToken[]
-  vendorUsers    VendorUser[]
-  auditLogs      AuditLog[]
+  sessions                  UserSession[]
+  passwordResets            PasswordResetToken[]
+  vendorUsers               VendorUser[]
+  auditLogs                 AuditLog[]
+  customers                 Customer[]
+  // Supply-list assignments this user (owner) created (US-005).
+  supplyListAssignmentsMade SupplyListStaff[]    @relation("SupplyListStaffAssignedBy")
 
   @@index([phone])
   @@index([email])
@@ -114,11 +117,14 @@ model Vendor {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  referredBy       Vendor?           @relation("VendorReferrals", fields: [referredByVendorId], references: [id], onDelete: SetNull)
-  referrals        Vendor[]          @relation("VendorReferrals")
-  vendorUsers      VendorUser[]
-  auditLogs        AuditLog[]
-  staffInvitations StaffInvitation[]
+  referredBy          Vendor?              @relation("VendorReferrals", fields: [referredByVendorId], references: [id], onDelete: SetNull)
+  referrals           Vendor[]             @relation("VendorReferrals")
+  vendorUsers         VendorUser[]
+  auditLogs           AuditLog[]
+  staffInvitations    StaffInvitation[]
+  vendorCustomers     VendorCustomer[]
+  supplyLists         SupplyList[]
+  supplyListCustomers SupplyListCustomer[]
 
   @@index([referralCode])
   @@index([category])
@@ -220,6 +226,7 @@ model VendorUser {
 
   staffPermissions StaffPermission[]
   invitations      StaffInvitation[]
+  supplyListStaff  SupplyListStaff[]
 
   @@unique([vendorId, userId])
   @@index([vendorId])
@@ -338,4 +345,207 @@ model AuditLog {
   @@index([entityType])
   @@index([entityId])
   @@map("audit_logs")
+}
+
+// =============================================================================
+// MODULE 03: CUSTOMERS  (US-005 minimal slice — US-008 owns full CRUD; OQ-1)
+// =============================================================================
+
+model Customer {
+  id BigInt @id @default(autoincrement())
+
+  userId   BigInt? @map("user_id")
+  name     String? @db.VarChar(100)
+  phone    String  @unique @db.VarChar(15)
+  email    String? @db.VarChar(100)
+  address  String? @db.Text
+  locality String? @db.VarChar(100)
+
+  autoMarkEnabled Boolean   @default(true) @map("auto_mark_enabled")
+  lastLoginAt     DateTime? @map("last_login_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  user                User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  vendorCustomers     VendorCustomer[]
+  referredVendorLinks VendorCustomer[]     @relation("VendorCustomerReferrer")
+  supplyListCustomers SupplyListCustomer[]
+
+  @@index([userId])
+  @@index([phone])
+  @@index([email])
+  @@index([locality])
+  @@index([deletedAt])
+  @@map("customers")
+}
+
+// =============================================================================
+// MODULE 04: VENDOR ↔ CUSTOMER RELATIONSHIP (US-005 minimal slice; OQ-1)
+// =============================================================================
+
+enum VendorCustomerStatus {
+  ACTIVE
+  PAUSED
+  BLOCKED
+
+  @@map("vendor_customer_status")
+}
+
+enum AcquisitionSource {
+  DIRECT
+  CUSTOMER_REFERRAL
+  INVITE_LINK
+  MANUAL_ADD
+
+  @@map("acquisition_source")
+}
+
+model VendorCustomer {
+  id BigInt @id @default(autoincrement())
+
+  vendorId             BigInt               @map("vendor_id")
+  customerId           BigInt               @map("customer_id")
+  status               VendorCustomerStatus @default(ACTIVE)
+  referredByCustomerId BigInt?              @map("referred_by_customer_id")
+  acquisitionSource    AcquisitionSource?   @map("acquisition_source")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  vendor     Vendor    @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  referredBy Customer? @relation("VendorCustomerReferrer", fields: [referredByCustomerId], references: [id], onDelete: SetNull)
+
+  @@unique([vendorId, customerId])
+  @@index([vendorId])
+  @@index([customerId])
+  @@index([status])
+  @@index([referredByCustomerId])
+  @@index([deletedAt])
+  @@map("vendor_customers")
+}
+
+// =============================================================================
+// MODULE 05: SUPPLY LISTS & CONFIGURATION (US-005)
+// =============================================================================
+
+enum SupplyFrequency {
+  DAILY
+  WEEKLY
+  MONTHLY
+
+  @@map("supply_frequency")
+}
+
+model SupplyList {
+  id BigInt @id @default(autoincrement())
+
+  vendorId        BigInt          @map("vendor_id")
+  name            String          @db.VarChar(100)
+  supplyType      String?         @map("supply_type") @db.VarChar(50)
+  unit            String          @db.VarChar(20)
+  defaultQuantity Decimal?        @map("default_quantity") @db.Decimal(10, 3)
+  ratePerUnit     Decimal?        @map("rate_per_unit") @db.Decimal(10, 2)
+  startTime       String?         @map("start_time") @db.VarChar(5) // HH:mm
+  frequency       SupplyFrequency @default(DAILY)
+  isActive        Boolean         @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  vendor        Vendor               @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  staff         SupplyListStaff[]
+  schedule      SupplyListSchedule[]
+  subscriptions SupplyListCustomer[]
+
+  @@index([vendorId])
+  @@index([isActive])
+  @@index([frequency])
+  @@index([deletedAt])
+  @@index([vendorId, isActive])
+  @@map("supply_lists")
+}
+
+model SupplyListStaff {
+  id BigInt @id @default(autoincrement())
+
+  supplyListId     BigInt   @map("supply_list_id")
+  vendorUserId     BigInt   @map("vendor_user_id")
+  isPrimary        Boolean  @default(false) @map("is_primary")
+  assignedByUserId BigInt?  @map("assigned_by_user_id")
+  assignedAt       DateTime @default(now()) @map("assigned_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  supplyList     SupplyList @relation(fields: [supplyListId], references: [id], onDelete: Cascade)
+  vendorUser     VendorUser @relation(fields: [vendorUserId], references: [id], onDelete: Restrict)
+  assignedByUser User?      @relation("SupplyListStaffAssignedBy", fields: [assignedByUserId], references: [id], onDelete: SetNull)
+
+  @@unique([supplyListId, vendorUserId])
+  @@index([supplyListId])
+  @@index([vendorUserId])
+  @@index([isPrimary])
+  @@map("supply_list_staff")
+}
+
+model SupplyListSchedule {
+  id BigInt @id @default(autoincrement())
+
+  supplyListId BigInt @map("supply_list_id")
+  dayOfWeek    Int?   @map("day_of_week") @db.SmallInt // 1-7
+  dayOfMonth   Int?   @map("day_of_month") @db.SmallInt // 1-31
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  supplyList SupplyList @relation(fields: [supplyListId], references: [id], onDelete: Cascade)
+
+  @@index([supplyListId])
+  @@map("supply_list_schedule")
+}
+
+// =============================================================================
+// MODULE 06: CUSTOMER SUBSCRIPTIONS (US-005)
+// =============================================================================
+
+model SupplyListCustomer {
+  id BigInt @id @default(autoincrement())
+
+  vendorId          BigInt    @map("vendor_id") // denormalized for vendor-scoped queries
+  supplyListId      BigInt    @map("supply_list_id")
+  customerId        BigInt    @map("customer_id")
+  customQuantity    Decimal?  @map("custom_quantity") @db.Decimal(10, 3)
+  customRatePerUnit Decimal?  @map("custom_rate_per_unit") @db.Decimal(10, 2)
+  startDate         DateTime? @map("start_date") @db.Date
+  endDate           DateTime? @map("end_date") @db.Date
+  isActive          Boolean   @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  vendor     Vendor     @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  supplyList SupplyList @relation(fields: [supplyListId], references: [id], onDelete: Cascade)
+  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  // NOTE: the (supplyListId, customerId) uniqueness is enforced by a PARTIAL
+  // unique index (`supply_list_customers_active_uq`, WHERE end_date IS NULL),
+  // which Prisma cannot express. It lives in the US-005 migration SQL. This keeps
+  // at most one NON-ended subscription per (list, customer) while allowing ENDED
+  // history rows and re-subscription after a subscription ends (BUG-2).
+  @@index([supplyListId, customerId])
+  @@index([vendorId])
+  @@index([supplyListId])
+  @@index([customerId])
+  @@index([isActive])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([deletedAt])
+  @@index([supplyListId, isActive])
+  @@map("supply_list_customers")
 }
