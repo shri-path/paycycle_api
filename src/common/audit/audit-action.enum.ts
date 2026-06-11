@@ -16,9 +16,17 @@ export enum AuditAction {
   STAFF_LIST_ASSIGNED = 'staff_list_assigned',
   STAFF_LIST_UNASSIGNED = 'staff_list_unassigned',
 
-  // Placeholders for later user stories (referenced for forward-compat)
+  // Supply lists & subscriptions (US-005)
   LIST_CREATED = 'list_created',
   LIST_UPDATED = 'list_updated',
+  LIST_ARCHIVED = 'list_archived',
+  LIST_STAFF_ASSIGNED = 'list_staff_assigned',
+  LIST_STAFF_UNASSIGNED = 'list_staff_unassigned',
+  CUSTOMERS_ADDED = 'customers_added',
+  SUBSCRIPTION_UPDATED = 'subscription_updated',
+  SUBSCRIPTION_ENDED = 'subscription_ended',
+
+  // Placeholders for later user stories (referenced for forward-compat)
   DELIVERY_MARKED = 'delivery_marked',
   PAYMENT_MARKED = 'payment_marked',
 }

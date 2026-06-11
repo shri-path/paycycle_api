@@ -32,6 +32,15 @@ async function cleanup(): Promise<void> {
   });
   if (vendorIds.length) {
     await prisma.auditLog.deleteMany({ where: { vendorId: { in: vendorIds } } });
+    // US-005: supply lists (RESTRICT FK to vendor) + owned children must go first.
+    const lists = await prisma.supplyList.findMany({ where: { vendorId: { in: vendorIds } } });
+    const listIds = lists.map((l) => l.id);
+    if (listIds.length) {
+      await prisma.supplyListCustomer.deleteMany({ where: { supplyListId: { in: listIds } } });
+      await prisma.supplyListStaff.deleteMany({ where: { supplyListId: { in: listIds } } });
+      await prisma.supplyListSchedule.deleteMany({ where: { supplyListId: { in: listIds } } });
+      await prisma.supplyList.deleteMany({ where: { id: { in: listIds } } });
+    }
   }
   await prisma.vendorUser.deleteMany({
     where: {
@@ -200,9 +209,13 @@ describe('US-004 Staff Management — additions', () => {
     });
   });
 
-  describe('assign-list / unassign-list (gated until US-005)', () => {
+  // US-005 / OQ-6: assign-list / unassign-list are no longer 503-gated. The real
+  // SupplyListAssignmentWriteAdapter is wired in the staff composition root and
+  // performs real writes over supply_list_staff.
+  describe('assign-list / unassign-list (US-005 real writes)', () => {
     let staffId: string;
     let staffToken: string;
+    let listId: string;
 
     beforeAll(async () => {
       const { staffId: sid, rawToken } = await invite(ownerA, P_ASSIGN);
@@ -211,39 +224,55 @@ describe('US-004 Staff Management — additions', () => {
         .post('/api/v1/auth/accept-invite')
         .send({ token: rawToken, password: 'Staff@123' });
       staffToken = accept.body.data.tokens.accessToken as string;
+
+      // Create a real supply list in ownerA's vendor to assign against.
+      const list = await request(app)
+        .post(`/api/v1/vendors/${ownerA.vendorId}/supply-lists`)
+        .set('Authorization', `Bearer ${ownerA.token}`)
+        .send({ name: 'US004 Assign List', unit: 'ltr', frequency: 'DAILY' });
+      listId = list.body.data.id as string;
     });
 
-    it('owner assign-list → 503 FEATURE_NOT_AVAILABLE with correlationId', async () => {
+    it('owner assign-list → 200 real write (no longer 503)', async () => {
       const res = await request(app)
         .post(`/api/v1/vendors/${ownerA.vendorId}/staff/${staffId}/assign-list`)
         .set('Authorization', `Bearer ${ownerA.token}`)
-        .send({ supplyListId: '1', isPrimary: true });
-      expect(res.status).toBe(503);
-      expect(res.body.error.code).toBe('FEATURE_NOT_AVAILABLE');
+        .send({ supplyListId: listId, isPrimary: true });
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.supplyListId).toBe(listId);
+    });
+
+    it('assign-list to a non-existent list → 404 (real adapter tenant guard)', async () => {
+      const res = await request(app)
+        .post(`/api/v1/vendors/${ownerA.vendorId}/staff/${staffId}/assign-list`)
+        .set('Authorization', `Bearer ${ownerA.token}`)
+        .send({ supplyListId: '99999999', isPrimary: false });
+      expect(res.status).toBe(404);
       expect(res.body.error.correlationId).toBeTruthy();
     });
 
-    it('owner unassign-list → 503', async () => {
+    it('owner unassign-list → 200 real write', async () => {
       const res = await request(app)
-        .delete(`/api/v1/vendors/${ownerA.vendorId}/staff/${staffId}/unassign-list/1`)
+        .delete(`/api/v1/vendors/${ownerA.vendorId}/staff/${staffId}/unassign-list/${listId}`)
         .set('Authorization', `Bearer ${ownerA.token}`);
-      expect(res.status).toBe(503);
-      expect(res.body.error.code).toBe('FEATURE_NOT_AVAILABLE');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
     });
 
-    it('guard order — staff caller gets 403, NOT 503', async () => {
+    it('guard order — staff caller gets 403 before reaching the adapter', async () => {
       const res = await request(app)
         .post(`/api/v1/vendors/${ownerA.vendorId}/staff/${staffId}/assign-list`)
         .set('Authorization', `Bearer ${staffToken}`)
-        .send({ supplyListId: '1' });
+        .send({ supplyListId: listId });
       expect(res.status).toBe(403);
     });
 
-    it('guard order — wrong-tenant owner gets 404, NOT 503', async () => {
+    it('guard order — wrong-tenant owner gets 404 (mask)', async () => {
       const res = await request(app)
         .post(`/api/v1/vendors/${ownerB.vendorId}/staff/${staffId}/assign-list`)
         .set('Authorization', `Bearer ${ownerB.token}`)
-        .send({ supplyListId: '1' });
+        .send({ supplyListId: listId });
       expect(res.status).toBe(404);
     });
   });

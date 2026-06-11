@@ -17,8 +17,8 @@ import {
 import { StaffController } from './staff.controller';
 import { VendorMembershipRepository } from './database/vendor-membership.repository';
 import { StaffInvitationRepository } from './database/staff-invitation.repository';
-import { ListAssignmentStubAdapter } from './adapters/list-assignment-stub.adapter';
-import { ListAssignmentWriteStubAdapter } from './adapters/list-assignment-write-stub.adapter';
+import { SupplyListAssignmentReadAdapter } from '@/modules/supply-list/adapters/supply-list-assignment-read.adapter';
+import { SupplyListAssignmentWriteAdapter } from '@/modules/supply-list/adapters/supply-list-assignment-write.adapter';
 import { SubscriptionLimitStubAdapter } from './adapters/subscription-limit-stub.adapter';
 import { StaffNotificationLogAdapter } from './adapters/staff-notification-log.adapter';
 import { SessionRevocationHandler } from './handlers/session-revocation.handler';
@@ -54,8 +54,11 @@ const userRepository = new UserRepository();
 const sessionRepository = new SessionRepository();
 const vendorUserRepository = new VendorUserRepository();
 
-const listAssignmentPort = new ListAssignmentStubAdapter(logger);
-const listAssignmentWritePort = new ListAssignmentWriteStubAdapter(logger);
+// US-005 (OQ-6): real adapters over supply_list_staff replace the fail-closed
+// stubs. assign-list/unassign-list now perform real writes; StaffRemoved →
+// unassignAll really clears assignments.
+const listAssignmentPort = new SupplyListAssignmentReadAdapter();
+const listAssignmentWritePort = new SupplyListAssignmentWriteAdapter();
 const subscriptionLimitPort = new SubscriptionLimitStubAdapter(membershipRepository);
 const notificationPort = new StaffNotificationLogAdapter(logger);
 const auditLogger = new AuditLogger(logger);

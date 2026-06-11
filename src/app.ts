@@ -11,6 +11,7 @@ import { setupSwagger } from './infrastructure/swagger/swagger.config';
 import authRoutes from './modules/auth/auth.routes';
 import userRoutes from './modules/user/user.routes';
 import staffRoutes from './modules/staff/staff.routes';
+import supplyListRoutes from './modules/supply-list/supply-list.routes';
 
 export function createApp() {
   const app = express();
@@ -63,6 +64,7 @@ export function createApp() {
   app.use(`${apiPrefix}/auth`, authRoutes);
   app.use(`${apiPrefix}/users`, userRoutes);
   app.use(`${apiPrefix}/vendors`, staffRoutes);
+  app.use(`${apiPrefix}/vendors`, supplyListRoutes);
 
   setupSwagger(app);
 

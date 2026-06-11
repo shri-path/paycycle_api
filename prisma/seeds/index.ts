@@ -37,6 +37,12 @@ const permissions = [
   { name: 'staff:invite', resource: 'staff', action: 'invite', description: 'Invite/manage staff (owner only)' },
   { name: 'subscription:manage', resource: 'subscription', action: 'manage', description: 'Manage subscription (owner only)' },
   { name: 'revenue:view', resource: 'revenue', action: 'view', description: 'View revenue reports (owner only)' },
+  // US-005 RBAC catalog — supply lists & subscriptions (resource:action)
+  { name: 'list:read', resource: 'list', action: 'read', description: 'View supply lists' },
+  { name: 'list:delete', resource: 'list', action: 'delete', description: 'Archive supply lists (owner only)' },
+  { name: 'list:assign_staff', resource: 'list', action: 'assign_staff', description: 'Assign staff to supply lists (owner only)' },
+  { name: 'subscription:read', resource: 'subscription', action: 'read', description: 'View customer subscriptions' },
+  { name: 'subscription:write', resource: 'subscription', action: 'write', description: 'Manage customer subscriptions (owner only)' },
 ];
 
 // Staff-grantable permission keys (per-membership grants, NOT role-level).
@@ -100,6 +106,9 @@ async function seed() {
     'billing:read',
     'payment:read',
     'extra_charge:read',
+    // US-005 — staff read-side for supply lists & subscriptions
+    'list:read',
+    'subscription:read',
   ];
   const staffPerms = permissionRecords.filter((p) => staffPermissionNames.includes(p.name));
   for (const perm of staffPerms) {
@@ -249,9 +258,139 @@ async function seed() {
     }
 
     console.log('✓ Dev staff memberships + grants + pending invitation seeded');
+
+    // =========================================================================
+    // US-005: dev customers, supply lists, staff assignments, subscriptions
+    // =========================================================================
+    await seedSupplyListsDevData(testVendorId);
   }
 
   console.log('✅ Seeding complete!');
+}
+
+/**
+ * US-005 dev seed: customers + vendor_customers, supply lists (DAILY + WEEKLY),
+ * staff assignments (1 primary each), and subscriptions with a mix of default
+ * and custom overrides. Deterministic + idempotent (upsert by stable keys).
+ */
+async function seedSupplyListsDevData(vendorId: bigint): Promise<void> {
+  // Realistic Indian customer directory for the dev vendor.
+  const customerSeeds: Array<{ phone: string; name: string; locality: string; address: string }> = [
+    { phone: '+919000100001', name: 'Ramesh Iyer', locality: 'Koramangala', address: '12, 5th Block, Koramangala' },
+    { phone: '+919000100002', name: 'Sunita Sharma', locality: 'Indiranagar', address: '404, 12th Main, Indiranagar' },
+    { phone: '+919000100003', name: 'Arjun Mehta', locality: 'HSR Layout', address: '7, Sector 2, HSR Layout' },
+    { phone: '+919000100004', name: 'Priya Nair', locality: 'Jayanagar', address: '88, 4th Block, Jayanagar' },
+    { phone: '+919000100005', name: 'Vikram Singh', locality: 'Whitefield', address: '21, Palm Meadows, Whitefield' },
+    { phone: '+919000100006', name: 'Lakshmi Rao', locality: 'BTM Layout', address: '15, 2nd Stage, BTM Layout' },
+    { phone: '+919000100007', name: 'Imran Khan', locality: 'Koramangala', address: '34, 6th Block, Koramangala' },
+    { phone: '+919000100008', name: 'Deepa Menon', locality: 'Indiranagar', address: '9, 100ft Road, Indiranagar' },
+  ];
+
+  const customerIds: bigint[] = [];
+  for (const c of customerSeeds) {
+    const customer = await prisma.customer.upsert({
+      where: { phone: c.phone },
+      update: { name: c.name, locality: c.locality, address: c.address },
+      create: {
+        phone: c.phone,
+        name: c.name,
+        locality: c.locality,
+        address: c.address,
+        autoMarkEnabled: true,
+      },
+    });
+    customerIds.push(customer.id);
+
+    await prisma.vendorCustomer.upsert({
+      where: { vendorId_customerId: { vendorId, customerId: customer.id } },
+      update: {},
+      create: {
+        vendorId,
+        customerId: customer.id,
+        status: 'ACTIVE',
+        acquisitionSource: 'MANUAL_ADD',
+      },
+    });
+  }
+
+  console.log(`✓ Dev customers + vendor_customers seeded (${customerIds.length})`);
+
+  // The dev staff member we assign to lists as primary.
+  const activeStaff = await prisma.vendorUser.findFirst({
+    where: { vendorId, phone: '+919000000010' },
+  });
+
+  // Supply list definitions (DAILY + WEEKLY examples).
+  const listSeeds: Array<{
+    name: string;
+    supplyType: string;
+    unit: string;
+    defaultQuantity: string;
+    ratePerUnit: string;
+    startTime: string;
+    frequency: 'DAILY' | 'WEEKLY' | 'MONTHLY';
+    daysOfWeek?: number[];
+  }> = [
+    { name: 'Morning Milk', supplyType: 'Milk', unit: 'ltr', defaultQuantity: '1.000', ratePerUnit: '60.00', startTime: '06:30', frequency: 'DAILY' },
+    { name: 'Evening Milk', supplyType: 'Milk', unit: 'ltr', defaultQuantity: '0.500', ratePerUnit: '62.00', startTime: '18:00', frequency: 'DAILY' },
+    { name: 'Morning Bread', supplyType: 'Bread', unit: 'pieces', defaultQuantity: '1.000', ratePerUnit: '45.00', startTime: '07:00', frequency: 'WEEKLY', daysOfWeek: [1, 3, 5] },
+  ];
+
+  for (let i = 0; i < listSeeds.length; i++) {
+    const s = listSeeds[i]!;
+    const existing = await prisma.supplyList.findFirst({
+      where: { vendorId, name: s.name, deletedAt: null },
+    });
+    if (existing) continue;
+
+    const list = await prisma.supplyList.create({
+      data: {
+        vendorId,
+        name: s.name,
+        supplyType: s.supplyType,
+        unit: s.unit,
+        defaultQuantity: s.defaultQuantity,
+        ratePerUnit: s.ratePerUnit,
+        startTime: s.startTime,
+        frequency: s.frequency,
+        isActive: true,
+        ...(s.daysOfWeek
+          ? { schedule: { create: s.daysOfWeek.map((d) => ({ dayOfWeek: d })) } }
+          : {}),
+      },
+    });
+
+    // Assign the active staff member as primary on each list.
+    if (activeStaff) {
+      await prisma.supplyListStaff.create({
+        data: {
+          supplyListId: list.id,
+          vendorUserId: activeStaff.id,
+          isPrimary: true,
+        },
+      });
+    }
+
+    // 4 subscriptions per list: 2 default, 2 with custom overrides.
+    const subscriberSlice = customerIds.slice(i * 2, i * 2 + 4);
+    for (let j = 0; j < subscriberSlice.length; j++) {
+      const customerId = subscriberSlice[j]!;
+      const useCustom = j >= 2; // last two carry overrides
+      await prisma.supplyListCustomer.create({
+        data: {
+          vendorId,
+          supplyListId: list.id,
+          customerId,
+          customQuantity: useCustom ? '2.000' : null,
+          customRatePerUnit: useCustom ? '58.00' : null,
+          startDate: new Date(),
+          isActive: true,
+        },
+      });
+    }
+  }
+
+  console.log('✓ Dev supply lists + staff assignments + subscriptions seeded');
 }
 
 seed()

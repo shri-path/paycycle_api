@@ -682,13 +682,14 @@ describe('assign-list / unassign-list — guard order', () => {
     expect(res.body.error.correlationId).toBeTruthy();
   });
 
-  it('BQ-31: valid owner of correct tenant → 503 FEATURE_NOT_AVAILABLE', async () => {
+  // US-005 / OQ-6: the 503 gate is gone. A valid owner of the correct tenant now
+  // reaches the real adapter; a non-existent list id → 404 (tenant guard).
+  it('BQ-31: valid owner of correct tenant reaches the real adapter → 404 for a missing list', async () => {
     const res = await request(app)
       .post(`/api/v1/vendors/${ownerQA1.vendorId}/staff/${assignStaffId}/assign-list`)
       .set('Authorization', `Bearer ${ownerQA1.token}`)
-      .send({ supplyListId: '1', isPrimary: false });
-    expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('FEATURE_NOT_AVAILABLE');
+      .send({ supplyListId: '99999999', isPrimary: false });
+    expect(res.status).toBe(404);
     expect(res.body.error.correlationId).toBeTruthy();
   });
 
@@ -735,13 +736,14 @@ describe('assign-list / unassign-list — guard order', () => {
     expect(res.body.error.correlationId).toBeTruthy();
   });
 
-  it('BQ-37: unassign-list — valid owner correct tenant → 503 FEATURE_NOT_AVAILABLE', async () => {
+  // US-005 / OQ-6: unassign is an idempotent real write — removing a
+  // non-existent assignment for a valid owner succeeds (200), no longer 503.
+  it('BQ-37: unassign-list — valid owner correct tenant → 200 (idempotent real write)', async () => {
     const res = await request(app)
       .delete(`/api/v1/vendors/${ownerQA1.vendorId}/staff/${assignStaffId}/unassign-list/1`)
       .set('Authorization', `Bearer ${ownerQA1.token}`);
-    expect(res.status).toBe(503);
-    expect(res.body.error.code).toBe('FEATURE_NOT_AVAILABLE');
-    expect(res.body.error.correlationId).toBeTruthy();
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
   });
 
   it('BQ-38: unassign-list — listId non-numeric → 400 (param schema rejects)', async () => {
@@ -947,12 +949,14 @@ describe('correlationId — present on ALL error responses', () => {
     expect(res.body.error.correlationId).toBeTruthy();
   });
 
-  it('BQ-54: 503 FEATURE_NOT_AVAILABLE has correlationId', async () => {
+  // US-005 / OQ-6: assign-list to a missing list now yields 404 (real adapter),
+  // which — like every error response — must carry a correlationId.
+  it('BQ-54: assign-list error response (404 missing list) has correlationId', async () => {
     const res = await request(app)
       .post(`/api/v1/vendors/${ownerQA1.vendorId}/staff/${cidStaffId}/assign-list`)
       .set('Authorization', `Bearer ${ownerQA1.token}`)
-      .send({ supplyListId: '1' });
-    expect(res.status).toBe(503);
+      .send({ supplyListId: '99999999' });
+    expect(res.status).toBe(404);
     expect(res.body.error.correlationId).toBeTruthy();
   });
 
