@@ -26,7 +26,14 @@ export enum AuditAction {
   SUBSCRIPTION_UPDATED = 'subscription_updated',
   SUBSCRIPTION_ENDED = 'subscription_ended',
 
-  // Placeholders for later user stories (referenced for forward-compat)
+  // Delivery tracking (US-006)
   DELIVERY_MARKED = 'delivery_marked',
+  DELIVERIES_BULK_MARKED = 'deliveries_bulk_marked',
+  EXTRA_CHARGE_ADDED = 'extra_charge_added',
+  LEAVE_MARKED = 'leave_marked',
+  LEAVE_CANCELLED = 'leave_cancelled',
+  DELIVERIES_GENERATED = 'deliveries_generated',
+
+  // Placeholders for later user stories (referenced for forward-compat)
   PAYMENT_MARKED = 'payment_marked',
 }
