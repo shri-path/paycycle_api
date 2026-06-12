@@ -79,6 +79,27 @@ export class DeliveryRepository implements IDeliveryRepository {
     return rows.map((r) => r.id);
   }
 
+  async findPendingIdsForDate(
+    serviceDate: Date,
+    options?: { minQuantity?: number },
+    tx?: PrismaTransaction
+  ): Promise<bigint[]> {
+    const where: Prisma.DailySupplyWhereInput = {
+      serviceDate,
+      status: DailySupplyStatus.PENDING,
+    };
+    if (options?.minQuantity !== undefined) {
+      where.quantity = { gt: options.minQuantity };
+    }
+    const rows = await this.db(tx).dailySupply.findMany({ where, select: { id: true } });
+    return rows.map((r) => r.id);
+  }
+
+  async findByIds(ids: bigint[], tx?: PrismaTransaction): Promise<DailySupplyRecord[]> {
+    if (ids.length === 0) return [];
+    return this.db(tx).dailySupply.findMany({ where: { id: { in: ids } } });
+  }
+
   async applyMark(
     entity: DailySupplyEntity,
     override: OverrideProps,

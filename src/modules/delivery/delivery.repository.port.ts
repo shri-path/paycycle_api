@@ -85,6 +85,19 @@ export interface IDeliveryRepository {
     tx?: PrismaTransaction
   ): Promise<bigint[]>;
 
+  /**
+   * PENDING daily-supply ids for a service date across all vendors (cron sweep).
+   * When `minQuantity` is set, only rows with quantity strictly greater are returned.
+   */
+  findPendingIdsForDate(
+    serviceDate: Date,
+    options?: { minQuantity?: number },
+    tx?: PrismaTransaction
+  ): Promise<bigint[]>;
+
+  /** Load daily-supply records by id without tenant scoping (system sweep only). */
+  findByIds(ids: bigint[], tx?: PrismaTransaction): Promise<DailySupplyRecord[]>;
+
   /** Persist a mark transition + its override atomically. */
   applyMark(
     entity: DailySupplyEntity,

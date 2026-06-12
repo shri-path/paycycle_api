@@ -9,10 +9,21 @@ import { identifyUserRole } from '@/infrastructure/middlewares/rbac/role-context
 import { requireOwnerRole } from '@/infrastructure/middlewares/rbac/require-owner';
 
 import { DeliveryController } from './delivery.controller';
-import { DeliveryService } from './delivery.service';
 import { DeliveryRepository } from './delivery.repository';
 import { DeliveryReader } from './delivery.reader';
 import { registerDeliveryCron } from './delivery.cron';
+import { MarkDeliveryCommand } from './commands/mark-delivery.command';
+import { MarkBulkDeliveryCommand } from './commands/mark-bulk-delivery.command';
+import { AddExtraChargeCommand } from './commands/add-extra-charge.command';
+import { CreateLeaveCommand } from './commands/create-leave.command';
+import { CancelLeaveCommand } from './commands/cancel-leave.command';
+import { GenerateDailySuppliesCommand } from './commands/generate-daily-supplies.command';
+import { AutoMarkSweepCommand } from './commands/auto-mark-sweep.command';
+import { GetTodayDeliveriesQuery } from './queries/get-today-deliveries.query';
+import { ListDeliveriesQuery } from './queries/list-deliveries.query';
+import { ListLeavesQuery } from './queries/list-leaves.query';
+import { GetCalendarQuery } from './queries/get-calendar.query';
+import { GetDateDetailQuery } from './queries/get-date-detail.query';
 import {
   vendorIdParamSchema,
   deliveryIdParamSchema,
@@ -36,12 +47,27 @@ const isTest = process.env['NODE_ENV'] === 'test';
 const repository = new DeliveryRepository();
 const reader = new DeliveryReader();
 const auditLogger = new AuditLogger(logger);
-const service = new DeliveryService(repository, reader, auditLogger, logger);
-const controller = new DeliveryController(service);
+
+const generateCommand = new GenerateDailySuppliesCommand(repository, reader, auditLogger, logger);
+const autoMarkSweepCommand = new AutoMarkSweepCommand(repository, logger);
+
+const controller = new DeliveryController({
+  markDelivery: new MarkDeliveryCommand(repository, reader, auditLogger, logger),
+  markBulk: new MarkBulkDeliveryCommand(repository, reader, auditLogger, logger),
+  addExtraCharge: new AddExtraChargeCommand(repository, reader, auditLogger, logger),
+  createLeave: new CreateLeaveCommand(repository, reader, auditLogger, logger),
+  cancelLeave: new CancelLeaveCommand(repository, reader, auditLogger, logger),
+  generate: generateCommand,
+  getToday: new GetTodayDeliveriesQuery(repository, reader),
+  listDeliveries: new ListDeliveriesQuery(repository, reader),
+  listLeaves: new ListLeavesQuery(repository, reader),
+  getCalendar: new GetCalendarQuery(repository, reader),
+  getDateDetail: new GetDateDetailQuery(repository, reader),
+});
 
 // Register cron jobs once at module load (guarded off in test + behind ENABLE_CRON).
 if (!isTest) {
-  registerDeliveryCron(service, reader, logger);
+  registerDeliveryCron(generateCommand, autoMarkSweepCommand, reader, logger);
 }
 
 const writeLimiter = rateLimit({

@@ -4,7 +4,13 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
 /* eslint-disable @typescript-eslint/no-unsafe-return */
-import { DeliveryService, shouldGenerateForDate, appToday } from '../delivery.service';
+import { shouldGenerateForDate, appToday, appYesterday } from '../delivery.shared';
+import { MarkDeliveryCommand } from '../commands/mark-delivery.command';
+import { AddExtraChargeCommand } from '../commands/add-extra-charge.command';
+import { CreateLeaveCommand } from '../commands/create-leave.command';
+import { GenerateDailySuppliesCommand } from '../commands/generate-daily-supplies.command';
+import { AutoMarkSweepCommand } from '../commands/auto-mark-sweep.command';
+import { GetTodayDeliveriesQuery } from '../queries/get-today-deliveries.query';
 import {
   DailySupplyEntity,
   DeliveryNotFoundError,
@@ -71,6 +77,8 @@ function makeRepo(overrides: any = {}): any {
     getExtraChargesTotal: jest.fn().mockResolvedValue(0),
     listByListAndDate: jest.fn().mockResolvedValue([]),
     findMarkableIds: jest.fn().mockResolvedValue([]),
+    findPendingIdsForDate: jest.fn().mockResolvedValue([]),
+    findByIds: jest.fn().mockResolvedValue([]),
     applyMark: jest.fn().mockResolvedValue(undefined),
     insertGenerated: jest.fn().mockResolvedValue(0),
     findBySubscriptionInRange: jest.fn().mockResolvedValue([]),
@@ -261,11 +269,11 @@ describe('shouldGenerateForDate', () => {
 // Service: markDelivery
 // ============================================================
 
-describe('DeliveryService.markDelivery', () => {
+describe('MarkDeliveryCommand', () => {
   it('404 when the delivery is missing / wrong tenant', async () => {
     const repo = makeRepo({ findById: jest.fn().mockResolvedValue(null) });
-    const svc = new DeliveryService(repo, makeReader(), audit, logger);
-    await expect(svc.markDelivery(ownerCtx(), 10n, { status: 'DELIVERED' }, meta)).rejects.toThrow(
+    const cmd = new MarkDeliveryCommand(repo, makeReader(), audit, logger);
+    await expect(cmd.execute(ownerCtx(), 10n, { status: 'DELIVERED' }, meta)).rejects.toThrow(
       DeliveryNotFoundError
     );
   });
@@ -275,8 +283,8 @@ describe('DeliveryService.markDelivery', () => {
     const reader = makeReader({
       getSubscriptionCustomerIds: jest.fn().mockResolvedValue(new Map([['50', 60n]])),
     });
-    const svc = new DeliveryService(repo, reader, audit, logger);
-    const result = await svc.markDelivery(ownerCtx(), 10n, { status: 'DELIVERED' }, meta);
+    const cmd = new MarkDeliveryCommand(repo, reader, audit, logger);
+    const result = await cmd.execute(ownerCtx(), 10n, { status: 'DELIVERED' }, meta);
     expect(repo.applyMark).toHaveBeenCalledTimes(1);
     expect(audit.log).toHaveBeenCalledTimes(1);
     expect(result.delivery.status).toBe('DELIVERED');
@@ -287,23 +295,18 @@ describe('DeliveryService.markDelivery', () => {
   it('staff without the mark grant is forbidden', async () => {
     const repo = makeRepo({ findById: jest.fn().mockResolvedValue(dailyRecord()) });
     const reader = makeReader({ isAssignedToList: jest.fn().mockResolvedValue(true) });
-    const svc = new DeliveryService(repo, reader, audit, logger);
-    await expect(
-      svc.markDelivery(staffCtx([]), 10n, { status: 'DELIVERED' }, meta)
-    ).rejects.toThrow(ForbiddenError);
+    const cmd = new MarkDeliveryCommand(repo, reader, audit, logger);
+    await expect(cmd.execute(staffCtx([]), 10n, { status: 'DELIVERED' }, meta)).rejects.toThrow(
+      ForbiddenError
+    );
   });
 
   it('staff not assigned to the list is masked as 404', async () => {
     const repo = makeRepo({ findById: jest.fn().mockResolvedValue(dailyRecord()) });
     const reader = makeReader({ isAssignedToList: jest.fn().mockResolvedValue(false) });
-    const svc = new DeliveryService(repo, reader, audit, logger);
+    const cmd = new MarkDeliveryCommand(repo, reader, audit, logger);
     await expect(
-      svc.markDelivery(
-        staffCtx([PermissionKey.MARK_DELIVERIES]),
-        10n,
-        { status: 'DELIVERED' },
-        meta
-      )
+      cmd.execute(staffCtx([PermissionKey.MARK_DELIVERIES]), 10n, { status: 'DELIVERED' }, meta)
     ).rejects.toThrow(DeliveryNotFoundError);
   });
 
@@ -313,8 +316,8 @@ describe('DeliveryService.markDelivery', () => {
       isAssignedToList: jest.fn().mockResolvedValue(true),
       getSubscriptionCustomerIds: jest.fn().mockResolvedValue(new Map([['50', 60n]])),
     });
-    const svc = new DeliveryService(repo, reader, audit, logger);
-    const result = await svc.markDelivery(
+    const cmd = new MarkDeliveryCommand(repo, reader, audit, logger);
+    const result = await cmd.execute(
       staffCtx([PermissionKey.MARK_DELIVERIES]),
       10n,
       { status: 'DELIVERED' },
@@ -328,9 +331,9 @@ describe('DeliveryService.markDelivery', () => {
   it('leave marking requires the mark_leaves grant', async () => {
     const repo = makeRepo({ findById: jest.fn().mockResolvedValue(dailyRecord()) });
     const reader = makeReader({ isAssignedToList: jest.fn().mockResolvedValue(true) });
-    const svc = new DeliveryService(repo, reader, audit, logger);
+    const cmd = new MarkDeliveryCommand(repo, reader, audit, logger);
     await expect(
-      svc.markDelivery(staffCtx([PermissionKey.MARK_DELIVERIES]), 10n, { status: 'LEAVE' }, meta)
+      cmd.execute(staffCtx([PermissionKey.MARK_DELIVERIES]), 10n, { status: 'LEAVE' }, meta)
     ).rejects.toThrow(ForbiddenError);
   });
 });
@@ -339,7 +342,7 @@ describe('DeliveryService.markDelivery', () => {
 // Service: addExtraCharge
 // ============================================================
 
-describe('DeliveryService.addExtraCharge', () => {
+describe('AddExtraChargeCommand', () => {
   it('blocks a charge on a LEAVE supply (422)', async () => {
     const repo = makeRepo({
       findById: jest
@@ -348,9 +351,9 @@ describe('DeliveryService.addExtraCharge', () => {
           dailyRecord({ status: 'LEAVE', finalAmount: { toString: () => '0.00' } })
         ),
     });
-    const svc = new DeliveryService(repo, makeReader(), audit, logger);
+    const cmd = new AddExtraChargeCommand(repo, makeReader(), audit, logger);
     await expect(
-      svc.addExtraCharge(ownerCtx(), { dailySupplyId: 10n, amount: 20, comment: 'x' }, meta)
+      cmd.execute(ownerCtx(), { dailySupplyId: 10n, amount: 20, comment: 'x' }, meta)
     ).rejects.toThrow(ChargeOnNonDeliverableError);
   });
 
@@ -358,8 +361,8 @@ describe('DeliveryService.addExtraCharge', () => {
     const repo = makeRepo({
       findById: jest.fn().mockResolvedValue(dailyRecord({ status: 'DELIVERED' })),
     });
-    const svc = new DeliveryService(repo, makeReader(), audit, logger);
-    const result = await svc.addExtraCharge(
+    const cmd = new AddExtraChargeCommand(repo, makeReader(), audit, logger);
+    const result = await cmd.execute(
       ownerCtx(),
       { dailySupplyId: 10n, amount: 20, comment: 'Extra milk' },
       meta
@@ -376,12 +379,12 @@ describe('DeliveryService.addExtraCharge', () => {
 // Service: createLeave
 // ============================================================
 
-describe('DeliveryService.createLeave', () => {
+describe('CreateLeaveCommand', () => {
   it('422 when the customer has no active subscription', async () => {
     const reader = makeReader({ resolveSubscriptions: jest.fn().mockResolvedValue([]) });
-    const svc = new DeliveryService(makeRepo(), reader, audit, logger);
+    const cmd = new CreateLeaveCommand(makeRepo(), reader, audit, logger);
     await expect(
-      svc.createLeave(
+      cmd.execute(
         ownerCtx(),
         {
           customerId: 60n,
@@ -406,8 +409,8 @@ describe('DeliveryService.createLeave', () => {
         .fn()
         .mockResolvedValue([dailyRecord({ id: 11n, status: 'PENDING' })]),
     });
-    const svc = new DeliveryService(repo, reader, audit, logger);
-    const result = await svc.createLeave(
+    const cmd = new CreateLeaveCommand(repo, reader, audit, logger);
+    const result = await cmd.execute(
       ownerCtx(),
       {
         customerId: 60n,
@@ -429,7 +432,7 @@ describe('DeliveryService.createLeave', () => {
 // Service: generate (idempotent fan-out)
 // ============================================================
 
-describe('DeliveryService.generateForVendor', () => {
+describe('GenerateDailySuppliesCommand.generateForVendor', () => {
   it('builds rows for daily subscriptions and reports generated/skipped', async () => {
     const reader = makeReader({
       getActiveSubscriptionsForGeneration: jest.fn().mockResolvedValue([
@@ -449,8 +452,8 @@ describe('DeliveryService.generateForVendor', () => {
       ]),
     });
     const repo = makeRepo({ insertGenerated: jest.fn().mockResolvedValue(1) });
-    const svc = new DeliveryService(repo, reader, audit, logger);
-    const result = await svc.generateForVendor(1n, new Date('2026-04-12T00:00:00Z'), 'corr');
+    const cmd = new GenerateDailySuppliesCommand(repo, reader, audit, logger);
+    const result = await cmd.generateForVendor(1n, new Date('2026-04-12T00:00:00Z'), 'corr');
     expect(result.generated).toBe(1);
     expect(repo.insertGenerated).toHaveBeenCalledTimes(1);
   });
@@ -474,9 +477,9 @@ describe('DeliveryService.generateForVendor', () => {
       ]),
     });
     const repo = makeRepo({ insertGenerated: jest.fn().mockResolvedValue(0) });
-    const svc = new DeliveryService(repo, reader, audit, logger);
+    const cmd = new GenerateDailySuppliesCommand(repo, reader, audit, logger);
     // 2026-04-13 is Monday.
-    const result = await svc.generateForVendor(1n, new Date('2026-04-13T00:00:00Z'), 'corr');
+    const result = await cmd.generateForVendor(1n, new Date('2026-04-13T00:00:00Z'), 'corr');
     expect(result.generated).toBe(0);
     expect(result.skipped).toBe(1);
   });
@@ -486,7 +489,7 @@ describe('DeliveryService.generateForVendor', () => {
 // Service: getToday (query)
 // ============================================================
 
-describe('DeliveryService.getToday', () => {
+describe('GetTodayDeliveriesQuery', () => {
   it('aggregates per-list counts and hides revenue for staff', async () => {
     const reader = makeReader({
       getAssignedListIds: jest.fn().mockResolvedValue([20n]),
@@ -504,8 +507,8 @@ describe('DeliveryService.getToday', () => {
           dailyRecord({ id: 2n, status: 'PENDING' }),
         ]),
     });
-    const svc = new DeliveryService(repo, reader, audit, logger);
-    const result = await svc.getToday(staffCtx([]), { date: '2026-04-12' });
+    const query = new GetTodayDeliveriesQuery(repo, reader);
+    const result = await query.execute(staffCtx([]), { date: '2026-04-12' });
     expect(result.summary.delivered).toBe(1);
     expect(result.summary.pending).toBe(1);
     expect(result.byList[0]!.revenue).toBeUndefined();
@@ -524,9 +527,100 @@ describe('DeliveryService.getToday', () => {
         .fn()
         .mockResolvedValue([dailyRecord({ id: 1n, status: 'DELIVERED' })]),
     });
-    const svc = new DeliveryService(repo, reader, audit, logger);
-    const result = await svc.getToday(ownerCtx(), { date: '2026-04-12' });
+    const query = new GetTodayDeliveriesQuery(repo, reader);
+    const result = await query.execute(ownerCtx(), { date: '2026-04-12' });
     expect(result.byList[0]!.revenue).toBe('50.00');
+  });
+});
+
+// ============================================================
+// Domain: autoMarkDelivered (system sweep)
+// ============================================================
+
+describe('DailySupplyEntity.autoMarkDelivered', () => {
+  function pending(): DailySupplyEntity {
+    return DailySupplyEntity.create({
+      vendorId: 1n,
+      supplyListCustomerId: 50n,
+      supplyListId: 20n,
+      serviceDate: new Date('2026-04-12T00:00:00Z'),
+      quantity: 2,
+      unit: 'ltr',
+      ratePerUnit: 50,
+      onLeave: false,
+    });
+  }
+
+  it('marks a PENDING supply DELIVERED with a SYSTEM override and isAutoMarked', () => {
+    const e = pending();
+    expect(e.autoMarkDelivered()).toBe(true);
+    expect(e.status).toBe('DELIVERED');
+    expect(e.getProps().isAutoMarked).toBe(true);
+    expect(e.getProps().markedByUserId).toBeNull();
+    expect(e.consumePendingOverride()).toMatchObject({
+      actorRole: 'SYSTEM',
+      newStatus: 'DELIVERED',
+    });
+  });
+
+  it('is a no-op on a non-PENDING supply', () => {
+    const e = pending();
+    e.markLeave('VENDOR_OWNER', 9n);
+    e.consumePendingOverride();
+    expect(e.autoMarkDelivered()).toBe(false);
+    expect(e.status).toBe('LEAVE');
+  });
+});
+
+// ============================================================
+// Command: AutoMarkSweepCommand (cron sweeps)
+// ============================================================
+
+describe('AutoMarkSweepCommand', () => {
+  it('sweeps yesterday: marks every PENDING row DELIVERED via SYSTEM', async () => {
+    const repo = makeRepo({
+      findPendingIdsForDate: jest.fn().mockResolvedValue([10n, 11n]),
+      findByIds: jest
+        .fn()
+        .mockResolvedValue([
+          dailyRecord({ id: 10n, status: 'PENDING' }),
+          dailyRecord({ id: 11n, status: 'PENDING' }),
+        ]),
+    });
+    const cmd = new AutoMarkSweepCommand(repo, logger);
+    const result = await cmd.sweepYesterday(new Date('2026-04-12T20:00:00Z'));
+    expect(result.scanned).toBe(2);
+    expect(result.marked).toBe(2);
+    expect(repo.applyMark).toHaveBeenCalledTimes(2);
+    // Yesterday relative to 2026-04-13 IST service date.
+    expect(result.serviceDate).toBe('2026-04-12');
+  });
+
+  it('sweeps the morning window with a quantity filter', async () => {
+    const repo = makeRepo({
+      findPendingIdsForDate: jest.fn().mockResolvedValue([10n]),
+      findByIds: jest.fn().mockResolvedValue([dailyRecord({ id: 10n, status: 'PENDING' })]),
+    });
+    const cmd = new AutoMarkSweepCommand(repo, logger);
+    await cmd.sweepMorning(new Date('2026-04-12T04:00:00Z'));
+    expect(repo.findPendingIdsForDate).toHaveBeenCalledWith(expect.any(Date), { minQuantity: 0 });
+    expect(repo.applyMark).toHaveBeenCalledTimes(1);
+  });
+
+  it('does nothing when no PENDING rows match', async () => {
+    const repo = makeRepo({ findPendingIdsForDate: jest.fn().mockResolvedValue([]) });
+    const cmd = new AutoMarkSweepCommand(repo, logger);
+    const result = await cmd.sweepYesterday();
+    expect(result.marked).toBe(0);
+    expect(repo.transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('appYesterday', () => {
+  it('returns the day before the app-timezone today', () => {
+    // 2026-04-12T20:00:00Z → 2026-04-13 IST → yesterday = 2026-04-12.
+    const d = appYesterday(new Date('2026-04-12T20:00:00Z'));
+    expect(d.toISOString().slice(0, 10)).toBe('2026-04-12');
   });
 });
 

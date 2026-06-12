@@ -3,7 +3,18 @@ import { DailySupplyStatus } from '@prisma/client';
 import { sendSuccess, sendCreated } from '@/common/api-wrapper/response.util';
 import { NotFoundError } from '@/common/errors/app-error';
 import { RoleContext } from '@/infrastructure/middlewares/rbac/role-context';
-import { DeliveryService, appToday } from './delivery.service';
+import { MarkDeliveryCommand } from './commands/mark-delivery.command';
+import { MarkBulkDeliveryCommand } from './commands/mark-bulk-delivery.command';
+import { AddExtraChargeCommand } from './commands/add-extra-charge.command';
+import { CreateLeaveCommand } from './commands/create-leave.command';
+import { CancelLeaveCommand } from './commands/cancel-leave.command';
+import { GenerateDailySuppliesCommand } from './commands/generate-daily-supplies.command';
+import { GetTodayDeliveriesQuery } from './queries/get-today-deliveries.query';
+import { ListDeliveriesQuery } from './queries/list-deliveries.query';
+import { ListLeavesQuery } from './queries/list-leaves.query';
+import { GetCalendarQuery } from './queries/get-calendar.query';
+import { GetDateDetailQuery } from './queries/get-date-detail.query';
+import { appToday } from './delivery.shared';
 import {
   AddExtraChargeInput,
   CreateLeaveInput,
@@ -12,12 +23,27 @@ import {
   MarkDeliveryInput,
 } from './delivery.validator';
 
+/** The command/query handlers a delivery controller delegates to. */
+export interface DeliveryHandlers {
+  markDelivery: MarkDeliveryCommand;
+  markBulk: MarkBulkDeliveryCommand;
+  addExtraCharge: AddExtraChargeCommand;
+  createLeave: CreateLeaveCommand;
+  cancelLeave: CancelLeaveCommand;
+  generate: GenerateDailySuppliesCommand;
+  getToday: GetTodayDeliveriesQuery;
+  listDeliveries: ListDeliveriesQuery;
+  listLeaves: ListLeavesQuery;
+  getCalendar: GetCalendarQuery;
+  getDateDetail: GetDateDetailQuery;
+}
+
 /**
  * Delivery tracking HTTP handlers. vendorId/actorUserId/role come from
  * req.roleContext (resolved by identifyUserRole) — never from the request body.
  */
 export class DeliveryController {
-  constructor(private readonly service: DeliveryService) {}
+  constructor(private readonly handlers: DeliveryHandlers) {}
 
   /**
    * @openapi
@@ -40,7 +66,7 @@ export class DeliveryController {
     try {
       const ctx = this.ctx(req);
       const q = req.query as Record<string, string | undefined>;
-      const result = await this.service.getToday(ctx, {
+      const result = await this.handlers.getToday.execute(ctx, {
         ...(q['date'] ? { date: q['date'] } : {}),
         ...(q['listId'] ? { listId: BigInt(q['listId']) } : {}),
       });
@@ -72,7 +98,7 @@ export class DeliveryController {
       const ctx = this.ctx(req);
       const listId = this.parseId(req.params['listId'], 'Supply list not found');
       const q = req.query as Record<string, string | undefined>;
-      const result = await this.service.getListDeliveries(ctx, listId, {
+      const result = await this.handlers.listDeliveries.execute(ctx, listId, {
         ...(q['date'] ? { date: q['date'] } : {}),
         ...(q['status'] ? { status: q['status'] as DailySupplyStatus } : {}),
         ...(q['search'] ? { search: q['search'] } : {}),
@@ -115,7 +141,7 @@ export class DeliveryController {
       const ctx = this.ctx(req);
       const deliveryId = this.parseId(req.params['deliveryId'], 'Delivery not found');
       const body = req.body as MarkDeliveryInput;
-      const result = await this.service.markDelivery(
+      const result = await this.handlers.markDelivery.execute(
         ctx,
         deliveryId,
         {
@@ -158,7 +184,7 @@ export class DeliveryController {
     try {
       const ctx = this.ctx(req);
       const body = req.body as MarkBulkInput;
-      const result = await this.service.markBulk(
+      const result = await this.handlers.markBulk.execute(
         ctx,
         {
           supplyListId: BigInt(body.supplyListId),
@@ -201,7 +227,7 @@ export class DeliveryController {
     try {
       const ctx = this.ctx(req);
       const body = req.body as AddExtraChargeInput;
-      const result = await this.service.addExtraCharge(
+      const result = await this.handlers.addExtraCharge.execute(
         ctx,
         { dailySupplyId: BigInt(body.dailySupplyId), amount: body.amount, comment: body.comment },
         this.meta(req)
@@ -241,7 +267,7 @@ export class DeliveryController {
     try {
       const ctx = this.ctx(req);
       const body = req.body as CreateLeaveInput;
-      const result = await this.service.createLeave(
+      const result = await this.handlers.createLeave.execute(
         ctx,
         {
           customerId: BigInt(body.customerId),
@@ -275,7 +301,7 @@ export class DeliveryController {
     try {
       const ctx = this.ctx(req);
       const q = req.query as Record<string, string | undefined>;
-      const result = await this.service.getLeaves(ctx, {
+      const result = await this.handlers.listLeaves.execute(ctx, {
         ...(q['status'] ? { status: q['status'] as 'today' | 'upcoming' } : {}),
       });
       sendSuccess(res, result);
@@ -302,7 +328,7 @@ export class DeliveryController {
     try {
       const ctx = this.ctx(req);
       const leaveId = this.parseId(req.params['leaveId'], 'Leave not found');
-      const result = await this.service.cancelLeave(ctx, leaveId, this.meta(req));
+      const result = await this.handlers.cancelLeave.execute(ctx, leaveId, this.meta(req));
       sendSuccess(res, result);
     } catch (error) {
       next(error);
@@ -328,7 +354,7 @@ export class DeliveryController {
     try {
       const ctx = this.ctx(req);
       const q = req.query as Record<string, string | undefined>;
-      const result = await this.service.getCalendar(ctx, {
+      const result = await this.handlers.getCalendar.execute(ctx, {
         month: q['month'] as string,
         ...(q['listId'] ? { listId: BigInt(q['listId']) } : {}),
       });
@@ -355,7 +381,7 @@ export class DeliveryController {
     try {
       const ctx = this.ctx(req);
       const date = req.params['date'] as string;
-      const result = await this.service.getDateDetail(ctx, date);
+      const result = await this.handlers.getDateDetail.execute(ctx, date);
       sendSuccess(res, result);
     } catch (error) {
       next(error);
@@ -385,7 +411,7 @@ export class DeliveryController {
       const ctx = this.ctx(req);
       const body = req.body as GenerateInput;
       const date = body.date ? new Date(`${body.date}T00:00:00Z`) : appToday();
-      const result = await this.service.generate(ctx, date, this.meta(req));
+      const result = await this.handlers.generate.execute(ctx, date, this.meta(req));
       sendSuccess(res, result, 202);
     } catch (error) {
       next(error);

@@ -442,6 +442,34 @@ export class DailySupplyEntity {
     this.validate();
   }
 
+  /**
+   * System auto-confirm: mark a PENDING supply DELIVERED on behalf of the vendor
+   * (overnight / morning-cutoff sweep). Sets isAutoMarked and appends a SYSTEM
+   * override. No-op return of false when the row is not PENDING so the sweep can skip.
+   */
+  autoMarkDelivered(): boolean {
+    if (this._props.status !== 'PENDING') return false;
+    const previousStatus = this._props.status;
+    this._props.status = 'DELIVERED';
+    this._props.baseAmount = round2(this._props.quantity * this._props.ratePerUnit);
+    this._props.finalAmount = round2(this._props.baseAmount + this._props.extraChargesTotal);
+    this._props.isAutoMarked = true;
+    this._props.markedByUserId = null;
+    this._props.markedAt = new Date();
+    this._updatedAt = new Date();
+    this.appendOverride({
+      actorRole: ActorRole.SYSTEM,
+      changedByUserId: null,
+      previousStatus,
+      newStatus: 'DELIVERED',
+      previousQuantity: this._props.quantity,
+      newQuantity: this._props.quantity,
+      comment: 'Auto-confirmed by system sweep',
+    });
+    this.validate();
+    return true;
+  }
+
   /** Mark the supply LEAVE: amount→0. Appends an override. */
   markLeave(actorRole: ActorRole, actorUserId: bigint | null): void {
     DeliveryStatusVO.assertTransition(this._props.status, 'LEAVE');
