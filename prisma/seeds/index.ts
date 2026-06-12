@@ -101,6 +101,9 @@ async function seed() {
 
   console.log('✓ All permissions assigned to vendor_owner');
 
+  // US-009: Seed subscription plans (idempotent, always runs)
+  await seedSubscriptionPlans();
+
   // 4. Assign read-only subset to vendor_staff
   const staffPermissionNames = [
     'delivery:read', 'delivery:write',
@@ -266,6 +269,11 @@ async function seed() {
     // US-005: dev customers, supply lists, staff assignments, subscriptions
     // =========================================================================
     await seedSupplyListsDevData(testVendorId);
+
+    // =========================================================================
+    // US-009: dev vendor subscription (Starter plan + history + invoices)
+    // =========================================================================
+    await seedDevVendorSubscription(testVendorId);
   }
 
   console.log('✅ Seeding complete!');
@@ -394,6 +402,188 @@ async function seedSupplyListsDevData(vendorId: bigint): Promise<void> {
   }
 
   console.log('✓ Dev supply lists + staff assignments + subscriptions seeded');
+}
+
+/**
+ * US-009: Seed subscription plans (idempotent upsert by planCode).
+ */
+async function seedSubscriptionPlans(): Promise<void> {
+  const plans = [
+    {
+      planCode: 'STARTER',
+      planName: 'Starter',
+      priceMonthly: 0.0,
+      priceYearly: null,
+      maxCustomers: 20,
+      maxStaff: 1,
+      maxSupplyLists: 5,
+      features: {
+        basic_delivery_tracking: true,
+        customer_management: true,
+      },
+      isActive: true,
+    },
+    {
+      planCode: 'GROWTH',
+      planName: 'Growth',
+      priceMonthly: 499.0,
+      priceYearly: 4990.0,
+      maxCustomers: 150,
+      maxStaff: 3,
+      maxSupplyLists: 10,
+      features: {
+        basic_delivery_tracking: true,
+        customer_management: true,
+        staff_management: true,
+        analytics: true,
+        whatsapp_notifications: true,
+        credit_control: true,
+      },
+      isActive: true,
+    },
+    {
+      planCode: 'PRO',
+      planName: 'Pro',
+      priceMonthly: 999.0,
+      priceYearly: 9990.0,
+      maxCustomers: 0,
+      maxStaff: 0,
+      maxSupplyLists: 0,
+      features: {
+        basic_delivery_tracking: true,
+        customer_management: true,
+        staff_management: true,
+        analytics: true,
+        whatsapp_notifications: true,
+        credit_control: true,
+        advanced_reports: true,
+        api_access: true,
+        priority_support: true,
+      },
+      isActive: true,
+    },
+  ];
+
+  for (const plan of plans) {
+    await prisma.subscriptionPlan.upsert({
+      where: { planCode: plan.planCode },
+      update: {
+        planName: plan.planName,
+        priceMonthly: plan.priceMonthly,
+        priceYearly: plan.priceYearly,
+        maxCustomers: plan.maxCustomers,
+        maxStaff: plan.maxStaff,
+        maxSupplyLists: plan.maxSupplyLists,
+        features: plan.features as object,
+        isActive: plan.isActive,
+      },
+      create: {
+        planCode: plan.planCode,
+        planName: plan.planName,
+        priceMonthly: plan.priceMonthly,
+        priceYearly: plan.priceYearly,
+        maxCustomers: plan.maxCustomers,
+        maxStaff: plan.maxStaff,
+        maxSupplyLists: plan.maxSupplyLists,
+        features: plan.features as object,
+        isActive: plan.isActive,
+      },
+    });
+  }
+
+  console.log('✓ Subscription plans seeded (STARTER, GROWTH, PRO)');
+}
+
+/**
+ * US-009: Seed dev vendor subscription (Starter plan + history + 2 invoices).
+ */
+async function seedDevVendorSubscription(vendorId: bigint): Promise<void> {
+  const starterPlan = await prisma.subscriptionPlan.findFirst({
+    where: { planCode: 'STARTER', isActive: true },
+  });
+  if (!starterPlan) {
+    console.log('✓ Skipping dev subscription seed (STARTER plan not found)');
+    return;
+  }
+
+  const existing = await prisma.vendorSubscription.findFirst({
+    where: {
+      vendorId,
+      status: { in: ['ACTIVE', 'TRIAL', 'PAST_DUE'] },
+      endDate: null,
+    },
+  });
+
+  if (existing) {
+    console.log('✓ Dev vendor already has active subscription — skipping');
+    return;
+  }
+
+  const today = new Date();
+  const nextBilling = new Date(today);
+  nextBilling.setDate(nextBilling.getDate() + 30);
+
+  const sub = await prisma.vendorSubscription.create({
+    data: {
+      vendorId,
+      subscriptionPlanId: starterPlan.id,
+      billingCycle: 'MONTHLY',
+      startDate: today,
+      endDate: null,
+      nextBillingDate: nextBilling,
+      status: 'ACTIVE',
+      amountPaid: 0,
+      autoRenewal: true,
+      isTrial: false,
+      trialEndsAt: null,
+    },
+  });
+
+  await prisma.vendorSubscriptionHistory.create({
+    data: {
+      vendorSubscriptionId: sub.id,
+      eventType: 'CREATED',
+      newPlanId: starterPlan.id,
+      performedByUserId: null,
+    },
+  });
+
+  // 2 invoices: one PAID (last month), one PENDING (this month)
+  const lastMonth = new Date(today);
+  lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+  await prisma.subscriptionInvoice.createMany({
+    data: [
+      {
+        vendorSubscriptionId: sub.id,
+        vendorId,
+        invoiceNumber: `INV-${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, '0')}-001`,
+        amount: 0,
+        tax: 0,
+        totalAmount: 0,
+        invoiceDate: lastMonth,
+        dueDate: lastMonth,
+        paymentStatus: 'PAID',
+        paymentDate: lastMonth,
+        paymentMethod: 'AUTO',
+        paymentReference: 'seed-001',
+      },
+      {
+        vendorSubscriptionId: sub.id,
+        vendorId,
+        invoiceNumber: `INV-${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-001`,
+        amount: 0,
+        tax: 0,
+        totalAmount: 0,
+        invoiceDate: today,
+        dueDate: today,
+        paymentStatus: 'PENDING',
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  console.log(`✓ Dev vendor Starter subscription seeded (id=${sub.id.toString()})`);
 }
 
 seed()

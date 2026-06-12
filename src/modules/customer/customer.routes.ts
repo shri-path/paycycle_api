@@ -10,6 +10,10 @@ import { requireOwnerRole } from '@/infrastructure/middlewares/rbac/require-owne
 import { CustomerController } from './customer.controller';
 import { CustomerRepository } from './database/customer.repository';
 import { DeliveryBillingAdapter } from './adapters/delivery-billing.adapter';
+import { PlanRepository } from '@/modules/subscription/database/plan.repository';
+import { SubscriptionRepository } from '@/modules/subscription/database/subscription.repository';
+import { UsageQueryService } from '@/modules/subscription/services/usage-query.service';
+import { enforceSubscriptionLimit } from '@/infrastructure/middlewares/subscription/enforce-subscription-limit';
 import { CreateCustomerCommand } from './commands/create-customer/create-customer.command';
 import { UpdateCustomerCommand } from './commands/update-customer/update-customer.command';
 import { DeactivateCustomerCommand } from './commands/deactivate-customer/deactivate-customer.command';
@@ -41,6 +45,17 @@ const isTest = process.env['NODE_ENV'] === 'test';
 // === Composition Root ===
 const repository = new CustomerRepository();
 const billingAdapter = new DeliveryBillingAdapter();
+
+// Subscription limit enforcement (US-009)
+const subscriptionPlanRepo = new PlanRepository();
+const vendorSubscriptionRepo = new SubscriptionRepository();
+const usageQueryService = new UsageQueryService();
+const customerLimitMiddleware = enforceSubscriptionLimit(
+  'customers',
+  vendorSubscriptionRepo,
+  subscriptionPlanRepo,
+  usageQueryService
+);
 
 const createCustomerCmd = new CreateCustomerCommand(repository, billingAdapter, logger);
 const updateCustomerCmd = new UpdateCustomerCommand(repository, billingAdapter, logger);
@@ -110,6 +125,7 @@ router.post(
   validate(createCustomerSchema, 'body'),
   identifyUserRole('vendorId'),
   requireOwnerRole(),
+  customerLimitMiddleware,
   asyncHandler(controller.createCustomer)
 );
 

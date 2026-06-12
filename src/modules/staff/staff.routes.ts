@@ -17,6 +17,10 @@ import {
 import { StaffController } from './staff.controller';
 import { VendorMembershipRepository } from './database/vendor-membership.repository';
 import { StaffInvitationRepository } from './database/staff-invitation.repository';
+import { PlanRepository } from '@/modules/subscription/database/plan.repository';
+import { SubscriptionRepository } from '@/modules/subscription/database/subscription.repository';
+import { UsageQueryService } from '@/modules/subscription/services/usage-query.service';
+import { enforceSubscriptionLimit } from '@/infrastructure/middlewares/subscription/enforce-subscription-limit';
 import { SupplyListAssignmentReadAdapter } from '@/modules/supply-list/adapters/supply-list-assignment-read.adapter';
 import { SupplyListAssignmentWriteAdapter } from '@/modules/supply-list/adapters/supply-list-assignment-write.adapter';
 import { SubscriptionLimitStubAdapter } from './adapters/subscription-limit-stub.adapter';
@@ -49,6 +53,17 @@ const isTest = process.env['NODE_ENV'] === 'test';
 
 // === Composition Root ===
 const membershipRepository = new VendorMembershipRepository();
+
+// Subscription limit enforcement (US-009)
+const staffPlanRepo = new PlanRepository();
+const staffSubRepo = new SubscriptionRepository();
+const staffUsageService = new UsageQueryService();
+const staffLimitMiddleware = enforceSubscriptionLimit(
+  'staff',
+  staffSubRepo,
+  staffPlanRepo,
+  staffUsageService
+);
 const invitationRepository = new StaffInvitationRepository();
 const userRepository = new UserRepository();
 const sessionRepository = new SessionRepository();
@@ -194,6 +209,7 @@ router.post(
   validate(inviteStaffSchema, 'body'),
   identifyUserRole('vendorId'),
   requireOwnerRole(),
+  staffLimitMiddleware,
   asyncHandler(controller.invite)
 );
 
