@@ -6,10 +6,20 @@ import {
   disconnectDatabase,
 } from './infrastructure/database/prisma.client';
 import './types/express.d';
+import { registerSubscriptionCron } from './modules/subscription/subscription.cron';
+import { ExpireOrRenewDueCommand } from './modules/subscription/commands/expire-or-renew-due/expire-or-renew-due.command';
+import { SubscriptionRepository } from './modules/subscription/database/subscription.repository';
+import { PlanRepository } from './modules/subscription/database/plan.repository';
 
 async function startServer() {
   try {
     await testDatabaseConnection();
+
+    // Register subscription cron jobs (gated behind ENABLE_CRON=true)
+    const subPlanRepo = new PlanRepository();
+    const subRepo = new SubscriptionRepository();
+    const expireOrRenewDue = new ExpireOrRenewDueCommand(subRepo, subPlanRepo, logger);
+    registerSubscriptionCron(expireOrRenewDue, subRepo, logger);
 
     const app = createApp();
 

@@ -135,6 +135,8 @@ model Vendor {
   supplyListCustomers SupplyListCustomer[]
   dailySupplies       DailySupply[]
   payments            Payment[]
+  vendorSubscriptions VendorSubscription[]
+  subscriptionInvoices SubscriptionInvoice[]
 
   @@index([referralCode])
   @@index([category])
@@ -773,4 +775,149 @@ model Leave {
   @@index([createdByUserId])
   @@index([startDate, endDate])
   @@map("leaves")
+}
+
+// =============================================================================
+// US-009: SUBSCRIPTION & PRICING MANAGEMENT
+// =============================================================================
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+
+  @@map("billing_cycle")
+}
+
+enum VendorSubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+
+  @@map("vendor_subscription_status")
+}
+
+enum SubscriptionEventType {
+  CREATED
+  UPGRADED
+  DOWNGRADED
+  RENEWED
+  CANCELLED
+  EXPIRED
+
+  @@map("subscription_event_type")
+}
+
+enum InvoicePaymentStatus {
+  PAID
+  PENDING
+  OVERDUE
+
+  @@map("invoice_payment_status")
+}
+
+model SubscriptionPlan {
+  id BigInt @id @default(autoincrement())
+
+  planName        String  @map("plan_name") @db.VarChar(50)
+  planCode        String  @unique @map("plan_code") @db.VarChar(20)
+  priceMonthly    Decimal @map("price_monthly") @db.Decimal(10, 2)
+  priceYearly     Decimal? @map("price_yearly") @db.Decimal(10, 2)
+  maxCustomers    Int     @default(0) @map("max_customers")
+  maxStaff        Int     @default(0) @map("max_staff")
+  maxSupplyLists  Int     @default(0) @map("max_supply_lists")
+  features        Json?
+  isActive        Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendorSubscriptions VendorSubscription[]
+
+  @@index([planCode])
+  @@index([isActive])
+  @@map("subscription_plans")
+}
+
+model VendorSubscription {
+  id BigInt @id @default(autoincrement())
+
+  vendorId             BigInt                   @map("vendor_id")
+  subscriptionPlanId   BigInt                   @map("subscription_plan_id")
+  billingCycle         BillingCycle             @map("billing_cycle")
+  startDate            DateTime                 @map("start_date") @db.Date
+  endDate              DateTime?                @map("end_date") @db.Date
+  nextBillingDate      DateTime?                @map("next_billing_date") @db.Date
+  status               VendorSubscriptionStatus @default(ACTIVE) @map("status")
+  amountPaid           Decimal                  @default(0) @map("amount_paid") @db.Decimal(10, 2)
+  autoRenewal          Boolean                  @default(true) @map("auto_renewal")
+  isTrial              Boolean                  @default(false) @map("is_trial")
+  trialEndsAt          DateTime?                @map("trial_ends_at") @db.Date
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendor   Vendor           @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  plan     SubscriptionPlan @relation(fields: [subscriptionPlanId], references: [id], onDelete: Restrict)
+  history  VendorSubscriptionHistory[]
+  invoices SubscriptionInvoice[]
+
+  // NOTE: a partial unique index (status IN TRIAL/ACTIVE/PAST_DUE AND end_date IS NULL)
+  // is added via raw SQL in the migration to enforce only one active subscription per vendor.
+  @@index([vendorId])
+  @@index([subscriptionPlanId])
+  @@index([status])
+  @@index([nextBillingDate])
+  @@index([vendorId, status])
+  @@map("vendor_subscriptions")
+}
+
+model VendorSubscriptionHistory {
+  id BigInt @id @default(autoincrement())
+
+  vendorSubscriptionId BigInt                @map("vendor_subscription_id")
+  eventType            SubscriptionEventType @map("event_type")
+  oldPlanId            BigInt?               @map("old_plan_id")
+  newPlanId            BigInt?               @map("new_plan_id")
+  reason               String?               @db.Text
+  performedByUserId    BigInt?               @map("performed_by_user_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vendorSubscription VendorSubscription @relation(fields: [vendorSubscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([vendorSubscriptionId])
+  @@index([createdAt])
+  @@index([eventType])
+  @@map("vendor_subscription_history")
+}
+
+model SubscriptionInvoice {
+  id BigInt @id @default(autoincrement())
+
+  vendorSubscriptionId BigInt               @map("vendor_subscription_id")
+  vendorId             BigInt               @map("vendor_id")
+  invoiceNumber        String               @unique @map("invoice_number") @db.VarChar(50)
+  amount               Decimal              @db.Decimal(10, 2)
+  tax                  Decimal              @default(0) @db.Decimal(10, 2)
+  totalAmount          Decimal              @map("total_amount") @db.Decimal(10, 2)
+  invoiceDate          DateTime             @map("invoice_date") @db.Date
+  dueDate              DateTime             @map("due_date") @db.Date
+  paymentStatus        InvoicePaymentStatus @default(PENDING) @map("payment_status")
+  paymentDate          DateTime?            @map("payment_date") @db.Date
+  paymentMethod        String?              @map("payment_method") @db.VarChar(50)
+  paymentReference     String?              @map("payment_reference") @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendorSubscription VendorSubscription @relation(fields: [vendorSubscriptionId], references: [id], onDelete: Cascade)
+  vendor             Vendor             @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+
+  @@index([vendorSubscriptionId])
+  @@index([vendorId])
+  @@index([paymentStatus])
+  @@index([createdAt])
+  @@map("subscription_invoices")
 }

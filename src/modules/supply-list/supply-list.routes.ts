@@ -11,6 +11,10 @@ import { requireOwnerRole } from '@/infrastructure/middlewares/rbac/require-owne
 import { SupplyListController } from './supply-list.controller';
 import { SupplyListRepository } from './database/supply-list.repository';
 import { SubscriptionRepository } from './database/subscription.repository';
+import { PlanRepository as PlatformPlanRepository } from '@/modules/subscription/database/plan.repository';
+import { SubscriptionRepository as PlatformSubscriptionRepository } from '@/modules/subscription/database/subscription.repository';
+import { UsageQueryService } from '@/modules/subscription/services/usage-query.service';
+import { enforceSubscriptionLimit } from '@/infrastructure/middlewares/subscription/enforce-subscription-limit';
 import { StaffDirectoryAdapter } from './adapters/staff-directory.adapter';
 import { CustomerDirectoryAdapter } from './adapters/customer-directory.adapter';
 import { DeliveryStatsAdapter } from '@/modules/delivery/delivery-stats.adapter';
@@ -46,6 +50,17 @@ const isTest = process.env['NODE_ENV'] === 'test';
 // === Composition Root ===
 const supplyListRepository = new SupplyListRepository();
 const subscriptionRepository = new SubscriptionRepository();
+
+// Subscription limit enforcement (US-009)
+const platformPlanRepo = new PlatformPlanRepository();
+const platformSubRepo = new PlatformSubscriptionRepository();
+const supplyListUsageService = new UsageQueryService();
+const supplyListLimitMiddleware = enforceSubscriptionLimit(
+  'supplyLists',
+  platformSubRepo,
+  platformPlanRepo,
+  supplyListUsageService
+);
 const staffDirectory = new StaffDirectoryAdapter();
 const customerDirectory = new CustomerDirectoryAdapter();
 // US-006 real adapter (replaces the US-005 zero stub).
@@ -168,6 +183,7 @@ router.post(
   validate(createSupplyListSchema, 'body'),
   identifyUserRole('vendorId'),
   requireOwnerRole(),
+  supplyListLimitMiddleware,
   asyncHandler(controller.create)
 );
 
