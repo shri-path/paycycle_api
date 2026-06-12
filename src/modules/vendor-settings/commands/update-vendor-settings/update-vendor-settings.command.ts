@@ -4,11 +4,17 @@
  * Emits VendorSettingsUpdatedEvent after successful persistence.
  */
 import { logger } from '@/infrastructure/logger/logger';
+import { ValidationError } from '@/common/errors/app-error';
 import { IVendorSettingsRepository } from '../../database/vendor-settings.repository.port';
 import { VendorSettingsEntity } from '../../domain/vendor-settings.entity';
 import { VendorSettingsMapper } from '../../vendor-settings.mapper';
 import { VendorSettingsDto } from '../../vendor-settings.types';
 import { VendorSettingsPatch } from '../../domain/vendor-settings.types';
+import {
+  InvalidTimeOfDayError,
+  InvalidNotificationPreferencesError,
+} from '../../domain/vendor-settings.errors';
+import { VendorSettingsUpdatedEvent } from '../../domain/events/vendor-settings-updated.domain-event';
 
 export interface UpdateVendorSettingsInput {
   vendorId: bigint;
@@ -27,6 +33,8 @@ export class UpdateVendorSettingsCommand {
       userId: performedByUserId.toString(),
     };
 
+    let pendingEvents: VendorSettingsUpdatedEvent[] = [];
+
     const savedRow = await this.repo.transaction(async (tx) => {
       const existingRow = await this.repo.findByVendor(vendorId, tx);
 
@@ -38,15 +46,27 @@ export class UpdateVendorSettingsCommand {
         entity = VendorSettingsEntity.create({ vendorId });
       }
 
-      entity.update(patch, metadata);
+      try {
+        entity.update(patch, metadata);
+      } catch (err) {
+        if (
+          err instanceof InvalidTimeOfDayError ||
+          err instanceof InvalidNotificationPreferencesError
+        ) {
+          throw new ValidationError(err.message);
+        }
+        throw err;
+      }
 
-      return this.repo.upsert(entity, tx);
+      const row = await this.repo.upsert(entity, tx);
+
+      // Pull events from the entity that had update() called — not from a re-hydrated instance
+      pendingEvents = entity.pullEvents();
+      return row;
     });
 
     // Publish domain events (fire-and-forget log — no synchronous bus in v1)
-    const tempEntity = VendorSettingsMapper.toDomain(savedRow);
-    const events = tempEntity.pullEvents();
-    for (const event of events) {
+    for (const event of pendingEvents) {
       logger.info({ event: event.type, payload: event.payload }, 'Domain event emitted');
     }
 

@@ -305,7 +305,7 @@ export class DashboardReadRepository implements IDashboardReadRepository {
   async leavesInRange(vendorId: bigint, from: Date, to: Date): Promise<LeaveRow[]> {
     const rows = await prisma.leave.findMany({
       where: {
-        subscription: { vendorId },
+        subscription: { vendorId, deletedAt: null },
         startDate: { lte: to },
         endDate: { gte: from },
       },
