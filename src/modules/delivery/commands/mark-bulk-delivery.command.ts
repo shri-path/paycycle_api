@@ -75,6 +75,6 @@ export class MarkBulkDeliveryCommand {
       correlationId,
     });
 
-    return { updated, skipped: input.excludeDeliveryIds.length };
+    return { updated, excluded: input.excludeDeliveryIds.length };
   }
 }

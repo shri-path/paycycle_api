@@ -106,6 +106,7 @@ function makeReader(overrides: any = {}): any {
     getCustomerDisplay: jest.fn().mockResolvedValue(new Map()),
     getSubscriptionCustomers: jest.fn().mockResolvedValue(new Map()),
     getSubscriptionCustomerIds: jest.fn().mockResolvedValue(new Map()),
+    getSubscriptionById: jest.fn().mockResolvedValue(null),
     getOtherListNames: jest.fn().mockResolvedValue(new Map()),
     getMarkerNames: jest.fn().mockResolvedValue(new Map()),
     getActiveSubscriptionsForGeneration: jest.fn().mockResolvedValue([]),

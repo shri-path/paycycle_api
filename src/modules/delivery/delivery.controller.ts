@@ -176,7 +176,7 @@ export class DeliveryController {
    *               status: { type: string, enum: [DELIVERED] }
    *               excludeDeliveryIds: { type: array, items: { type: string } }
    *     responses:
-   *       200: { description: Count of updated and skipped deliveries }
+   *       200: { description: "Count of updated deliveries and excluded (count of caller-specified IDs that were explicitly excluded)" }
    *       403: { description: Staff missing grant }
    *       404: { description: List not found / staff not assigned (masked) }
    */

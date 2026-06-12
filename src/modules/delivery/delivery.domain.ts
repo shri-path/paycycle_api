@@ -534,8 +534,8 @@ export class DailySupplyEntity {
     if (this._props.status === 'LEAVE' || this._props.status === 'CANCELLED') {
       throw new ChargeOnNonDeliverableError();
     }
-    if (!Number.isFinite(amount) || amount === 0) {
-      throw new ArgumentInvalidException('Extra charge amount must be a non-zero finite number');
+    if (!Number.isFinite(amount) || amount === 0 || Math.abs(amount) < 0.01) {
+      throw new ArgumentInvalidException('Extra charge amount must be at least 0.01');
     }
     const normalized = round2(amount);
     this._props.extraChargesTotal = round2(this._props.extraChargesTotal + normalized);

@@ -200,6 +200,18 @@ export class DeliveryReader {
     return map;
   }
 
+  /** A subscription's owning supply list id, or null when missing. */
+  async getSubscriptionById(
+    subscriptionId: bigint,
+    tx?: PrismaTransaction
+  ): Promise<{ supplyListId: bigint } | null> {
+    const row = await this.db(tx).supplyListCustomer.findUnique({
+      where: { id: subscriptionId },
+      select: { supplyListId: true },
+    });
+    return row ? { supplyListId: row.supplyListId } : null;
+  }
+
   /** Other active list names per customer (for the otherLists field). */
   async getOtherListNames(
     vendorId: bigint,

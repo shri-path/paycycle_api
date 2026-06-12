@@ -215,8 +215,14 @@ export class DeliveryRepository implements IDeliveryRepository {
     return this.transaction(run);
   }
 
-  async findLeaveById(id: bigint, tx?: PrismaTransaction): Promise<LeaveRecord | null> {
-    const row = await this.db(tx).leave.findUnique({ where: { id } });
+  async findLeaveById(
+    id: bigint,
+    vendorId: bigint,
+    tx?: PrismaTransaction
+  ): Promise<LeaveRecord | null> {
+    const row = await this.db(tx).leave.findFirst({
+      where: { id, subscription: { vendorId } },
+    });
     return row as LeaveRecord | null;
   }
 

@@ -94,7 +94,8 @@ export const addExtraChargeSchema = z
     amount: z
       .number()
       .finite()
-      .refine((n) => n !== 0, 'amount must be non-zero'),
+      .refine((n) => n !== 0, 'amount must be non-zero')
+      .refine((n) => Math.abs(n) >= 0.01, { message: 'Amount must be at least 0.01 (one cent)' }),
     comment: z.string().trim().min(1, 'comment is required').max(500),
   })
   .strict();

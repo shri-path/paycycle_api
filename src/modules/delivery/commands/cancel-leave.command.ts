@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { Logger } from '@/infrastructure/logger/logger';
-import { AppError, ForbiddenError, InternalServerError } from '@/common/errors/app-error';
+import { AppError, InternalServerError } from '@/common/errors/app-error';
 import { AuditPort } from '@/common/audit/audit.port';
 import { AuditAction } from '@/common/audit/audit-action.enum';
 import { RoleContext } from '@/infrastructure/middlewares/rbac/role-context';
@@ -29,25 +29,20 @@ export class CancelLeaveCommand {
     meta: ActorMeta
   ): Promise<{ revertedDeliveries: number }> {
     const correlationId = crypto.randomUUID();
-    const leave = await this.repository.findLeaveById(leaveId);
+    const leave = await this.repository.findLeaveById(leaveId, ctx.vendorId);
     if (!leave) throw new LeaveNotFoundError();
 
-    // Tenant + permission: resolve the subscription's list and check the grant.
-    const customers = await this.reader.getSubscriptionCustomerIds([leave.supplyListCustomerId]);
-    if (customers.size === 0) throw new LeaveNotFoundError();
+    // Permission: resolve the subscription's list directly (independent of generated rows).
+    const subscriptionInfo = await this.reader.getSubscriptionById(leave.supplyListCustomerId);
+    if (!subscriptionInfo) throw new LeaveNotFoundError();
+    const listId = subscriptionInfo.supplyListId;
+    await this.access.assertListPermission(ctx, listId, PermissionKey.MARK_LEAVES);
 
     const supplies = await this.repository.findBySubscriptionInRange(
       leave.supplyListCustomerId,
       leave.startDate,
       leave.endDate
     );
-    // Permission: the leave's list — derive from any covered supply, else allow owner.
-    const listId = supplies[0]?.supplyListId;
-    if (listId !== undefined) {
-      await this.access.assertListPermission(ctx, listId, PermissionKey.MARK_LEAVES);
-    } else if (ctx.role !== 'owner') {
-      throw new ForbiddenError('You do not have permission to cancel this leave');
-    }
 
     const today = appToday();
     if (leave.endDate.getTime() < today.getTime()) {

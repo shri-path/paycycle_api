@@ -138,7 +138,7 @@ export interface IDeliveryRepository {
 
   // === Leaves ===
 
-  findLeaveById(id: bigint, tx?: PrismaTransaction): Promise<LeaveRecord | null>;
+  findLeaveById(id: bigint, vendorId: bigint, tx?: PrismaTransaction): Promise<LeaveRecord | null>;
 
   insertLeave(entity: LeaveEntity, tx?: PrismaTransaction): Promise<{ id: bigint }>;
 

@@ -48,7 +48,8 @@ export interface MarkDeliveryResultDto {
 /** Response of POST /deliveries/mark-bulk. */
 export interface MarkBulkResultDto {
   updated: number;
-  skipped: number;
+  /** Count of caller-specified IDs that were explicitly excluded. */
+  excluded: number;
 }
 
 /** Today summary roll-up. */
