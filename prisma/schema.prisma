@@ -44,6 +44,9 @@ model User {
   supplyOverridesMade       SupplyOverride[]     @relation("SupplyOverrideChangedBy")
   extraChargesAdded         SupplyExtraCharge[]  @relation("SupplyExtraChargeAddedBy")
   leavesCreated             Leave[]              @relation("LeaveCreatedBy")
+  // US-008: Customer management back-relations.
+  customersCreated          Customer[]           @relation("CustomerCreatedBy")
+  paymentsRecorded          Payment[]            @relation("PaymentRecordedBy")
 
   @@index([phone])
   @@index([email])
@@ -131,6 +134,7 @@ model Vendor {
   supplyLists         SupplyList[]
   supplyListCustomers SupplyListCustomer[]
   dailySupplies       DailySupply[]
+  payments            Payment[]
 
   @@index([referralCode])
   @@index([category])
@@ -354,7 +358,27 @@ model AuditLog {
 }
 
 // =============================================================================
-// MODULE 03: CUSTOMERS  (US-005 minimal slice — US-008 owns full CRUD; OQ-1)
+// US-008: CUSTOMER STATUS & PAYMENT METHOD ENUMS
+// =============================================================================
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+
+  @@map("customer_status")
+}
+
+enum PaymentMethod {
+  CASH
+  ONLINE
+  UPI
+  OTHER
+
+  @@map("payment_method")
+}
+
+// =============================================================================
+// MODULE 03: CUSTOMERS  (US-005 minimal slice extended to full CRUD in US-008)
 // =============================================================================
 
 model Customer {
@@ -370,21 +394,64 @@ model Customer {
   autoMarkEnabled Boolean   @default(true) @map("auto_mark_enabled")
   lastLoginAt     DateTime? @map("last_login_at")
 
+  // US-008: extended fields (nullable/defaulted to preserve existing rows)
+  phoneCountryCode   String         @default("+91") @map("phone_country_code") @db.VarChar(5)
+  area               String?        @db.VarChar(100)
+  languagePreference String         @default("en") @map("language_preference") @db.VarChar(10)
+  creditLimit        Decimal        @default(0) @map("credit_limit") @db.Decimal(10, 2)
+  paymentScore       Decimal        @default(100) @map("payment_score") @db.Decimal(5, 2)
+  customerSince      DateTime?      @map("customer_since") @db.Date
+  status             CustomerStatus @default(ACTIVE)
+  createdByUserId    BigInt?        @map("created_by_user_id")
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
   user                User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdByUser       User?                @relation("CustomerCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   vendorCustomers     VendorCustomer[]
   referredVendorLinks VendorCustomer[]     @relation("VendorCustomerReferrer")
   supplyListCustomers SupplyListCustomer[]
+  payments            Payment[]
 
   @@index([userId])
   @@index([phone])
   @@index([email])
   @@index([locality])
+  @@index([status])
   @@index([deletedAt])
   @@map("customers")
+}
+
+// =============================================================================
+// US-008: PAYMENTS
+// =============================================================================
+
+model Payment {
+  id BigInt @id @default(autoincrement())
+
+  customerId       BigInt        @map("customer_id")
+  vendorId         BigInt        @map("vendor_id")
+  amount           Decimal       @db.Decimal(10, 2)
+  paymentDate      DateTime      @map("payment_date") @db.Date
+  paymentMethod    PaymentMethod @default(CASH) @map("payment_method")
+  referenceNumber  String?       @map("reference_number") @db.VarChar(100)
+  recordedByUserId BigInt?       @map("recorded_by_user_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  vendor         Vendor   @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  recordedByUser User?    @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([paymentDate])
+  @@index([customerId, paymentDate])
+  @@index([vendorId, customerId])
+  @@map("payments")
 }
 
 // =============================================================================

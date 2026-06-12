@@ -624,17 +624,29 @@ export class LeaveEntity {
 
   static create(props: CreateLeaveProps): LeaveEntity {
     const range = DateRange.create(props.startDate, props.endDate);
-    return new LeaveEntity(0n, new Date(), {
+    const entity = new LeaveEntity(0n, new Date(), {
       supplyListCustomerId: props.supplyListCustomerId,
       range,
       leaveType: props.leaveType,
       reason: props.reason,
       createdByUserId: props.createdByUserId,
     });
+    entity.validate();
+    return entity;
   }
 
   static reconstitute(data: { id: bigint; createdAt: Date; props: LeaveProps }): LeaveEntity {
-    return new LeaveEntity(data.id, data.createdAt, { ...data.props });
+    const entity = new LeaveEntity(data.id, data.createdAt, { ...data.props });
+    entity.validate();
+    return entity;
+  }
+
+  private validate(): void {
+    const start = this._props.range.startDate.value.getTime();
+    const end = this._props.range.endDate.value.getTime();
+    if (end < start) {
+      throw new ArgumentInvalidException('Leave endDate must be on or after startDate');
+    }
   }
 }
 
