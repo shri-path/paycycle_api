@@ -1,3 +1,8 @@
+import {
+  DomainEventBase,
+  DomainEventMetadata,
+} from '@/modules/auth/domain/events/domain-event.base';
+
 export interface SubscriptionCancelledPayload {
   vendorSubscriptionId: bigint;
   vendorId: bigint;
@@ -6,7 +11,13 @@ export interface SubscriptionCancelledPayload {
   occurredAt: Date;
 }
 
-export class SubscriptionCancelledEvent {
-  readonly eventType = 'CANCELLED' as const;
-  constructor(public readonly payload: SubscriptionCancelledPayload) {}
+export class SubscriptionCancelledEvent extends DomainEventBase {
+  readonly type = 'subscription.cancelled' as const;
+
+  constructor(
+    public readonly payload: SubscriptionCancelledPayload,
+    metadata: DomainEventMetadata
+  ) {
+    super(payload.vendorSubscriptionId.toString(), metadata);
+  }
 }

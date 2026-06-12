@@ -11,7 +11,6 @@ import {
   BillingCycleEnum,
   InvoicePaymentStatus,
 } from '../../domain/subscription.types';
-import { SubscriptionRepository } from '../../database/subscription.repository';
 
 export interface ExpireOrRenewResult {
   renewed: number;
@@ -60,7 +59,7 @@ export class ExpireOrRenewDueCommand {
               tx
             );
 
-            const invoiceNumber = await SubscriptionRepository.generateInvoiceNumber(
+            const invoiceNumber = await this.subscriptionRepo.generateInvoiceNumber(
               row.vendorId,
               today,
               tx

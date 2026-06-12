@@ -18,6 +18,8 @@ import { SubscriptionUpgradedEvent } from './events/subscription-upgraded.domain
 import { SubscriptionRenewedEvent } from './events/subscription-renewed.domain-event';
 import { SubscriptionCancelledEvent } from './events/subscription-cancelled.domain-event';
 import { SubscriptionExpiredEvent } from './events/subscription-expired.domain-event';
+import { DomainEventMetadata } from '@/modules/auth/domain/events/domain-event.base';
+import { ArgumentInvalidException } from '@/common/errors/app-error';
 
 type DomainEvent =
   | SubscriptionCreatedEvent
@@ -94,8 +96,13 @@ export class VendorSubscriptionEntity {
     return this._props.trialEndsAt;
   }
 
-  getProps(): Readonly<VendorSubscriptionProps> {
-    return Object.freeze({ ...this._props });
+  getProps(): Readonly<VendorSubscriptionProps & { id: bigint; createdAt: Date; updatedAt: Date }> {
+    return Object.freeze({
+      ...this._props,
+      id: this._id,
+      createdAt: this._createdAt,
+      updatedAt: this._updatedAt,
+    });
   }
 
   pullEvents(): DomainEvent[] {
@@ -104,12 +111,30 @@ export class VendorSubscriptionEntity {
     return events;
   }
 
+  // ── Invariant validation ──────────────────────────────────────────────────
+
+  private validate(): void {
+    if (!Object.values(VendorSubscriptionStatus).includes(this._props.status)) {
+      throw new ArgumentInvalidException(`Invalid subscription status: ${this._props.status}`);
+    }
+    if (!Object.values(BillingCycleEnum).includes(this._props.billingCycle)) {
+      throw new ArgumentInvalidException(`Invalid billing cycle: ${this._props.billingCycle}`);
+    }
+    if (this._props.amountPaid < 0) {
+      throw new ArgumentInvalidException('amountPaid must be >= 0');
+    }
+    if (this._props.endDate && this._props.startDate > this._props.endDate) {
+      throw new ArgumentInvalidException('endDate must be >= startDate');
+    }
+  }
+
   // ── Factory: create Starter subscription ─────────────────────────────────
 
   static createStarter(
     vendorId: bigint,
     plan: SubscriptionPlanEntity,
-    today: Date
+    today: Date,
+    metadata?: DomainEventMetadata
   ): VendorSubscriptionEntity {
     const nextBilling = new Date(today);
     nextBilling.setDate(nextBilling.getDate() + 30);
@@ -128,14 +153,20 @@ export class VendorSubscriptionEntity {
       trialEndsAt: null,
     });
 
+    entity.validate();
+
+    const eventMetadata: DomainEventMetadata = metadata ?? { correlationId: 'system' };
     entity._events.push(
-      new SubscriptionCreatedEvent({
-        vendorSubscriptionId: entity._id,
-        vendorId,
-        newPlanId: plan.id,
-        performedByUserId: null,
-        occurredAt: today,
-      })
+      new SubscriptionCreatedEvent(
+        {
+          vendorSubscriptionId: entity._id,
+          vendorId,
+          newPlanId: plan.id,
+          performedByUserId: null,
+          occurredAt: today,
+        },
+        eventMetadata
+      )
     );
 
     return entity;
@@ -149,7 +180,9 @@ export class VendorSubscriptionEntity {
     updatedAt: Date,
     props: VendorSubscriptionProps
   ): VendorSubscriptionEntity {
-    return new VendorSubscriptionEntity(id, createdAt, updatedAt, props);
+    const entity = new VendorSubscriptionEntity(id, createdAt, updatedAt, props);
+    entity.validate();
+    return entity;
   }
 
   // ── Assign a persisted ID (called after DB insert) ───────────────────────
@@ -186,7 +219,8 @@ export class VendorSubscriptionEntity {
     billingCycle: BillingCycleEnum,
     today: Date,
     prorataAmount: number,
-    performedByUserId?: bigint | null
+    performedByUserId?: bigint | null,
+    metadata?: DomainEventMetadata
   ): VendorSubscriptionEntity {
     const newTier = newPlan.tier;
     if (!newTier.isHigherThan(currentPlanTier)) {
@@ -213,15 +247,21 @@ export class VendorSubscriptionEntity {
       trialEndsAt: null,
     });
 
+    newEntity.validate();
+
+    const eventMetadata: DomainEventMetadata = metadata ?? { correlationId: 'system' };
     newEntity._events.push(
-      new SubscriptionUpgradedEvent({
-        vendorSubscriptionId: newEntity._id,
-        vendorId: currentEntity.vendorId,
-        oldPlanId: currentEntity.subscriptionPlanId,
-        newPlanId: newPlan.id,
-        performedByUserId: performedByUserId ?? null,
-        occurredAt: today,
-      })
+      new SubscriptionUpgradedEvent(
+        {
+          vendorSubscriptionId: newEntity._id,
+          vendorId: currentEntity.vendorId,
+          oldPlanId: currentEntity.subscriptionPlanId,
+          newPlanId: newPlan.id,
+          performedByUserId: performedByUserId ?? null,
+          occurredAt: today,
+        },
+        eventMetadata
+      )
     );
 
     return newEntity;
@@ -233,7 +273,8 @@ export class VendorSubscriptionEntity {
     billingCycle: BillingCycleEnum,
     today: Date,
     amount: number,
-    performedByUserId?: bigint | null
+    performedByUserId?: bigint | null,
+    metadata?: DomainEventMetadata
   ): void {
     const cycle = BillingCycleVO.of(billingCycle);
     const prevEnd = this._props.nextBillingDate ?? today;
@@ -252,20 +293,24 @@ export class VendorSubscriptionEntity {
     };
     this._updatedAt = today;
 
+    const eventMetadata: DomainEventMetadata = metadata ?? { correlationId: 'system' };
     this._events.push(
-      new SubscriptionRenewedEvent({
-        vendorSubscriptionId: this._id,
-        vendorId: this._props.vendorId,
-        planId: this._props.subscriptionPlanId,
-        performedByUserId: performedByUserId ?? null,
-        occurredAt: today,
-      })
+      new SubscriptionRenewedEvent(
+        {
+          vendorSubscriptionId: this._id,
+          vendorId: this._props.vendorId,
+          planId: this._props.subscriptionPlanId,
+          performedByUserId: performedByUserId ?? null,
+          occurredAt: today,
+        },
+        eventMetadata
+      )
     );
   }
 
   // ── Behaviour: cancel ────────────────────────────────────────────────────
 
-  cancel(today: Date, performedByUserId?: bigint | null): void {
+  cancel(today: Date, performedByUserId?: bigint | null, metadata?: DomainEventMetadata): void {
     if (
       this._props.status === VendorSubscriptionStatus.CANCELLED ||
       this._props.status === VendorSubscriptionStatus.EXPIRED
@@ -280,20 +325,24 @@ export class VendorSubscriptionEntity {
     };
     this._updatedAt = today;
 
+    const eventMetadata: DomainEventMetadata = metadata ?? { correlationId: 'system' };
     this._events.push(
-      new SubscriptionCancelledEvent({
-        vendorSubscriptionId: this._id,
-        vendorId: this._props.vendorId,
-        planId: this._props.subscriptionPlanId,
-        performedByUserId: performedByUserId ?? null,
-        occurredAt: today,
-      })
+      new SubscriptionCancelledEvent(
+        {
+          vendorSubscriptionId: this._id,
+          vendorId: this._props.vendorId,
+          planId: this._props.subscriptionPlanId,
+          performedByUserId: performedByUserId ?? null,
+          occurredAt: today,
+        },
+        eventMetadata
+      )
     );
   }
 
   // ── Behaviour: expire ────────────────────────────────────────────────────
 
-  expire(today: Date): void {
+  expire(today: Date, metadata?: DomainEventMetadata): void {
     if (this._props.status === VendorSubscriptionStatus.EXPIRED) return; // idempotent
 
     this._props = {
@@ -303,13 +352,17 @@ export class VendorSubscriptionEntity {
     };
     this._updatedAt = today;
 
+    const eventMetadata: DomainEventMetadata = metadata ?? { correlationId: 'system' };
     this._events.push(
-      new SubscriptionExpiredEvent({
-        vendorSubscriptionId: this._id,
-        vendorId: this._props.vendorId,
-        planId: this._props.subscriptionPlanId,
-        occurredAt: today,
-      })
+      new SubscriptionExpiredEvent(
+        {
+          vendorSubscriptionId: this._id,
+          vendorId: this._props.vendorId,
+          planId: this._props.subscriptionPlanId,
+          occurredAt: today,
+        },
+        eventMetadata
+      )
     );
   }
 

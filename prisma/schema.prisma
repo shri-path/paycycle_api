@@ -849,7 +849,7 @@ model VendorSubscription {
   startDate            DateTime                 @map("start_date") @db.Date
   endDate              DateTime?                @map("end_date") @db.Date
   nextBillingDate      DateTime?                @map("next_billing_date") @db.Date
-  status               VendorSubscriptionStatus @default(ACTIVE)
+  status               VendorSubscriptionStatus @default(ACTIVE) @map("status")
   amountPaid           Decimal                  @default(0) @map("amount_paid") @db.Decimal(10, 2)
   autoRenewal          Boolean                  @default(true) @map("auto_renewal")
   isTrial              Boolean                  @default(false) @map("is_trial")

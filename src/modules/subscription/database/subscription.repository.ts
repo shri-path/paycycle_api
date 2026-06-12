@@ -24,6 +24,7 @@ const ACTIVE_STATUSES: PrismaVendorSubscriptionStatus[] = [
   PrismaVendorSubscriptionStatus.TRIAL,
   PrismaVendorSubscriptionStatus.ACTIVE,
   PrismaVendorSubscriptionStatus.PAST_DUE,
+  PrismaVendorSubscriptionStatus.CANCELLED,
 ];
 
 function toRow(r: {
@@ -138,6 +139,18 @@ export class SubscriptionRepository implements ISubscriptionRepository {
         status: { in: ACTIVE_STATUSES },
         endDate: null,
       },
+    });
+    return row ? toRow(row) : null;
+  }
+
+  async findLatestExpiredByVendor(
+    vendorId: bigint,
+    tx?: PrismaTransaction
+  ): Promise<VendorSubscriptionRow | null> {
+    const db = tx ?? prisma;
+    const row = await db.vendorSubscription.findFirst({
+      where: { vendorId, status: PrismaVendorSubscriptionStatus.EXPIRED },
+      orderBy: { createdAt: 'desc' },
     });
     return row ? toRow(row) : null;
   }
@@ -303,8 +316,17 @@ export class SubscriptionRepository implements ISubscriptionRepository {
     return prisma.$transaction(fn);
   }
 
+  /** Instance method to satisfy the ISubscriptionRepository port. */
+  async generateInvoiceNumber(
+    vendorId: bigint,
+    today: Date,
+    tx: PrismaTransaction
+  ): Promise<string> {
+    return SubscriptionRepository._generateInvoiceNumber(vendorId, today, tx);
+  }
+
   /** Generate invoice number: INV-YYYY-MM-<seq> within a transaction. */
-  static async generateInvoiceNumber(
+  private static async _generateInvoiceNumber(
     vendorId: bigint,
     today: Date,
     tx: PrismaTransaction

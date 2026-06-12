@@ -12,11 +12,8 @@ import {
   SubscriptionEventType,
   BillingCycleEnum,
   InvoicePaymentStatus,
-  VendorSubscriptionStatus,
 } from '../../domain/subscription.types';
 import { RenewResponseDto } from '../../subscription.types';
-import { SubscriptionRepository } from '../../database/subscription.repository';
-import { prisma } from '@/infrastructure/database/prisma.client';
 
 export interface RenewSubscriptionInput {
   vendorId: bigint;
@@ -49,29 +46,9 @@ export class RenewSubscriptionCommand {
 
       if (!currentRow) {
         // Re-activation from EXPIRED: find the most recent expired sub for this vendor
-        const expiredRow = await prisma.vendorSubscription.findFirst({
-          where: { vendorId, status: VendorSubscriptionStatus.EXPIRED },
-          orderBy: { createdAt: 'desc' },
-        });
-
+        const expiredRow = await this.subscriptionRepo.findLatestExpiredByVendor(vendorId, tx);
         if (!expiredRow) throw new SubscriptionNotFoundError();
-
-        currentRow = {
-          id: expiredRow.id,
-          vendorId: expiredRow.vendorId,
-          subscriptionPlanId: expiredRow.subscriptionPlanId,
-          billingCycle: expiredRow.billingCycle,
-          startDate: expiredRow.startDate,
-          endDate: expiredRow.endDate,
-          nextBillingDate: expiredRow.nextBillingDate,
-          status: expiredRow.status,
-          amountPaid: expiredRow.amountPaid.toNumber(),
-          autoRenewal: expiredRow.autoRenewal,
-          isTrial: expiredRow.isTrial,
-          trialEndsAt: expiredRow.trialEndsAt,
-          createdAt: expiredRow.createdAt,
-          updatedAt: expiredRow.updatedAt,
-        };
+        currentRow = expiredRow;
       }
 
       const plan = await this.planRepo.findActiveById(currentRow.subscriptionPlanId);
@@ -94,7 +71,7 @@ export class RenewSubscriptionCommand {
         tx
       );
 
-      const invoiceNumber = await SubscriptionRepository.generateInvoiceNumber(vendorId, today, tx);
+      const invoiceNumber = await this.subscriptionRepo.generateInvoiceNumber(vendorId, today, tx);
       const dueDate = new Date(today);
       dueDate.setDate(dueDate.getDate() + 5);
 

@@ -56,7 +56,14 @@ export interface ISubscriptionRepository {
     tx?: PrismaTransaction
   ): Promise<VendorSubscriptionRow | null>;
 
+  findLatestExpiredByVendor(
+    vendorId: bigint,
+    tx?: PrismaTransaction
+  ): Promise<VendorSubscriptionRow | null>;
+
   findDueSubscriptions(today: Date, tx?: PrismaTransaction): Promise<VendorSubscriptionRow[]>;
+
+  generateInvoiceNumber(vendorId: bigint, today: Date, tx: PrismaTransaction): Promise<string>;
 
   /** Upgrade: close old + persist new in one transaction. */
   closeAndOpen(

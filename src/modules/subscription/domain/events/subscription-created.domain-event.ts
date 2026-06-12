@@ -1,3 +1,8 @@
+import {
+  DomainEventBase,
+  DomainEventMetadata,
+} from '@/modules/auth/domain/events/domain-event.base';
+
 export interface SubscriptionCreatedPayload {
   vendorSubscriptionId: bigint;
   vendorId: bigint;
@@ -6,7 +11,13 @@ export interface SubscriptionCreatedPayload {
   occurredAt: Date;
 }
 
-export class SubscriptionCreatedEvent {
-  readonly eventType = 'CREATED' as const;
-  constructor(public readonly payload: SubscriptionCreatedPayload) {}
+export class SubscriptionCreatedEvent extends DomainEventBase {
+  readonly type = 'subscription.created' as const;
+
+  constructor(
+    public readonly payload: SubscriptionCreatedPayload,
+    metadata: DomainEventMetadata
+  ) {
+    super(payload.vendorSubscriptionId.toString(), metadata);
+  }
 }

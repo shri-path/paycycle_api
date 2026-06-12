@@ -17,7 +17,6 @@ import {
   InvoicePaymentStatus,
 } from '../../domain/subscription.types';
 import { UpgradeResponseDto } from '../../subscription.types';
-import { SubscriptionRepository } from '../../database/subscription.repository';
 
 export interface UpgradeSubscriptionInput {
   vendorId: bigint;
@@ -96,7 +95,7 @@ export class UpgradeSubscriptionCommand {
       );
 
       // Generate invoice number inside the transaction
-      const invoiceNumber = await SubscriptionRepository.generateInvoiceNumber(vendorId, today, tx);
+      const invoiceNumber = await this.subscriptionRepo.generateInvoiceNumber(vendorId, today, tx);
       const dueDate = new Date(today);
       dueDate.setDate(dueDate.getDate() + 5);
 
