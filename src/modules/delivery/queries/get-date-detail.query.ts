@@ -1,3 +1,4 @@
+import { ForbiddenError } from '@/common/errors/app-error';
 import { RoleContext } from '@/infrastructure/middlewares/rbac/role-context';
 import { IDeliveryRepository } from '../delivery.repository.port';
 import { DeliveryReader } from '../delivery.reader';
@@ -12,6 +13,12 @@ export class GetDateDetailQuery {
   ) {}
 
   async execute(ctx: RoleContext, dateIso: string): Promise<DateDetailResultDto> {
+    // Defense-in-depth: the date detail exposes financial data (revenue by list)
+    // and is owner-only. Enforce the guard here too, not just in route middleware.
+    if (ctx.role !== 'owner') {
+      throw new ForbiddenError('Date detail view is restricted to vendor owners');
+    }
+
     const date = isoToDate(dateIso);
     const lists = await this.reader.getSupplyLists(ctx.vendorId);
 

@@ -243,7 +243,10 @@ export class DeliveryStatusVO {
   }
 
   static assertTransition(from: DailySupplyStatus, to: DailySupplyStatus): void {
-    if (from === to) return;
+    // Allow a same-status re-mark only for non-terminal states; CANCELLED is
+    // terminal and must always fall through to the TRANSITIONS guard (which is
+    // empty for CANCELLED), so a re-cancel throws instead of silently no-op'ing.
+    if (from === to && from !== 'CANCELLED') return;
     if (!DeliveryStatusVO.canTransition(from, to)) {
       throw new InvalidDeliveryTransitionError(`Cannot transition delivery from ${from} to ${to}`);
     }

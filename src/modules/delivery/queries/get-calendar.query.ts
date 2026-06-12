@@ -1,3 +1,4 @@
+import { ForbiddenError } from '@/common/errors/app-error';
 import { RoleContext } from '@/infrastructure/middlewares/rbac/role-context';
 import { IDeliveryRepository } from '../delivery.repository.port';
 import { DeliveryReader } from '../delivery.reader';
@@ -19,6 +20,12 @@ export class GetCalendarQuery {
     ctx: RoleContext,
     params: { month: string; listId?: bigint }
   ): Promise<CalendarResultDto> {
+    // Defense-in-depth: the calendar exposes financial data (revenue by day) and
+    // is owner-only. Enforce the guard here too, not just in route middleware.
+    if (ctx.role !== 'owner') {
+      throw new ForbiddenError('Calendar view is restricted to vendor owners');
+    }
+
     const [year, month] = params.month.split('-').map(Number);
     const from = new Date(Date.UTC(year!, month! - 1, 1));
     const to = new Date(Date.UTC(year!, month, 0));
