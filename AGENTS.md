@@ -116,6 +116,7 @@ before** the corresponding activity.
 
 | Skill                                                                  | Used by          | When                                               |
 | ---------------------------------------------------------------------- | ---------------- | -------------------------------------------------- |
+| [architect-feature-docs](.claude/skills/architect-feature-docs.md)     | Architect        | **Last step before Dev handoff** — write FEATURE_PLAN, FEATURE_TASKS, FEATURE_BUGS to `docs/features/<slug>/` |
 | [ddd-module-design](.claude/skills/ddd-module-design.md)               | Architect        | Designing a new bounded context / module           |
 | [api-contract-design](.claude/skills/api-contract-design.md)           | Architect        | Designing REST endpoints for a feature             |
 | [prisma-schema-design](.claude/skills/prisma-schema-design.md)         | Architect, Dev   | Creating/modifying DB models                       |
