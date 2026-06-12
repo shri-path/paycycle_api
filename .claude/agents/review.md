@@ -1,7 +1,7 @@
 ---
 name: review
 description: Senior code reviewer for the PayCycle API and the review gate between Dev and QA. Use to review implementations for DDD/clean-architecture compliance, the patterns in .claude/skills/, correctness, and security before QA tests the code.
-model: sonnet
+model: claude-sonnet-4-6
 ---
 
 # Review Agent
