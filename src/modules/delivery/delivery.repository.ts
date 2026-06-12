@@ -220,10 +220,19 @@ export class DeliveryRepository implements IDeliveryRepository {
     vendorId: bigint,
     tx?: PrismaTransaction
   ): Promise<LeaveRecord | null> {
-    const row = await this.db(tx).leave.findFirst({
+    return this.db(tx).leave.findFirst({
       where: { id, subscription: { vendorId } },
+      select: {
+        id: true,
+        supplyListCustomerId: true,
+        startDate: true,
+        endDate: true,
+        leaveType: true,
+        reason: true,
+        createdByUserId: true,
+        createdAt: true,
+      },
     });
-    return row as LeaveRecord | null;
   }
 
   async insertLeave(entity: LeaveEntity, tx?: PrismaTransaction): Promise<{ id: bigint }> {
@@ -290,11 +299,20 @@ export class DeliveryRepository implements IDeliveryRepository {
     if (params.supplyListCustomerIds !== undefined) {
       where.supplyListCustomerId = { in: params.supplyListCustomerIds };
     }
-    const rows = await this.db(tx).leave.findMany({
+    return this.db(tx).leave.findMany({
       where,
+      select: {
+        id: true,
+        supplyListCustomerId: true,
+        startDate: true,
+        endDate: true,
+        leaveType: true,
+        reason: true,
+        createdByUserId: true,
+        createdAt: true,
+      },
       orderBy: { startDate: 'asc' },
     });
-    return rows as LeaveRecord[];
   }
 
   async transaction<T>(fn: (tx: PrismaTransaction) => Promise<T>): Promise<T> {

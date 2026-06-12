@@ -1,5 +1,5 @@
-import { ActorRole, DailySupplyStatus } from '@prisma/client';
 import { PrismaTransaction } from '@/infrastructure/database/prisma.client';
+import { ActorRole, DailySupplyStatus, LeaveType } from './delivery.types';
 import {
   DailySupplyEntity,
   DailySupplyRecord,
@@ -41,13 +41,11 @@ export interface LeaveRecord {
   supplyListCustomerId: bigint;
   startDate: Date;
   endDate: Date;
-  leaveType: ActorRoleOrLeaveType;
+  leaveType: LeaveType;
   reason: string | null;
   createdByUserId: bigint | null;
   createdAt: Date;
 }
-
-type ActorRoleOrLeaveType = 'CUSTOMER_REQUESTED' | 'VENDOR_MARKED' | 'SYSTEM';
 
 /** Override row used to compute conflicts and marker info. */
 export interface OverrideRow {
