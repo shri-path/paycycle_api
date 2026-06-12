@@ -64,7 +64,7 @@ async function cleanup(): Promise<void> {
   }
 
   await prisma.userSession.deleteMany({ where: { userId: { in: userIds } } });
-  await prisma.refreshToken.deleteMany({ where: { userId: { in: userIds } } });
+  await prisma.passwordResetToken.deleteMany({ where: { userId: { in: userIds } } });
   await prisma.user.deleteMany({ where: { id: { in: userIds } } });
 }
 
@@ -125,7 +125,7 @@ describe('US-009 Subscription & Pricing Integration', () => {
       .get('/api/v1/subscription-plans')
       .set('Authorization', `Bearer ${ownerA.token}`);
     expect(plansRes.status).toBe(200);
-    const plans = (plansRes.body as { data: Array<{ id: string; planCode: string }> }).data;
+    const plans = (plansRes.body as { data: { plans: Array<{ id: string; planCode: string }> } }).data.plans;
     const growth = plans.find((p) => p.planCode === 'GROWTH');
     const pro = plans.find((p) => p.planCode === 'PRO');
     if (!growth || !pro) throw new Error('Plans not seeded — run npm run db:seed');
@@ -168,10 +168,10 @@ describe('US-009 Subscription & Pricing Integration', () => {
         .set('Authorization', `Bearer ${ownerA.token}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      const data = res.body.data as Array<{ planCode: string }>;
-      expect(data.some((p) => p.planCode === 'STARTER')).toBe(true);
-      expect(data.some((p) => p.planCode === 'GROWTH')).toBe(true);
-      expect(data.some((p) => p.planCode === 'PRO')).toBe(true);
+      const plans = (res.body.data as { plans: Array<{ planCode: string }> }).plans;
+      expect(plans.some((p) => p.planCode === 'STARTER')).toBe(true);
+      expect(plans.some((p) => p.planCode === 'GROWTH')).toBe(true);
+      expect(plans.some((p) => p.planCode === 'PRO')).toBe(true);
     });
 
     it('response has planCode, planName, priceMonthly, limits fields', async () => {
@@ -179,7 +179,8 @@ describe('US-009 Subscription & Pricing Integration', () => {
         .get('/api/v1/subscription-plans')
         .set('Authorization', `Bearer ${ownerA.token}`);
       expect(res.status).toBe(200);
-      const plan = (res.body.data as Array<Record<string, unknown>>)[0];
+      const plans = (res.body.data as { plans: Array<Record<string, unknown>> }).plans;
+      const plan = plans[0];
       expect(plan).toHaveProperty('planCode');
       expect(plan).toHaveProperty('planName');
       expect(plan).toHaveProperty('priceMonthly');
@@ -428,7 +429,7 @@ describe('US-009 Subscription & Pricing Integration', () => {
       const plansRes = await request(app)
         .get('/api/v1/subscription-plans')
         .set('Authorization', `Bearer ${limitOwner.token}`);
-      const starterPlan = (plansRes.body.data as Array<{ planCode: string; maxCustomers: number }>)
+      const starterPlan = (plansRes.body.data as { plans: Array<{ planCode: string; maxCustomers: number }> }).plans
         .find((p) => p.planCode === 'STARTER');
 
       if (!starterPlan) throw new Error('STARTER plan not found in plan list');

@@ -83,23 +83,26 @@ through file-based handoffs. Each has a strict boundary — agents do not do eac
 
 > **Every stage begins by reading [.claude/memory/MEMORY.md](.claude/memory/MEMORY.md).**
 
-1. **Architect** reads the User Story, applies design skills, and produces the plan artifacts.
-2. **Dev** implements each layer strictly from the plan, applying implementation skills.
-3. **Review** verifies the code against the skill checklists and architecture; approves or sends it back to Dev.
-4. **QA** tests the reviewed code against `FEATURE_PLAN.md` *and* the skills; logs reproducible bugs to `FEATURE_BUGS.md`.
-5. **Dev** fixes review findings and QA bugs and updates their status (re-review/re-test as needed).
-6. On passing QA, open the PR / merge and move the story 🟡→🟢 in `../project_documents/vendor_app/PROGRESS_TRACKER.md`.
+1. **Backend Architect** reads the User Story, applies design skills, and produces `FEATURE_PLAN.md`, `DOMAIN_MODEL.md`, `FEATURE_TASKS.md`, and `API_SPEC.md`.
+2. **Orchestrator trigger** — as soon as `FEATURE_PLAN.md` + `API_SPEC.md` exist, immediately invoke the **Frontend Architect** on `paycycle_vendor`. Do **not** wait for backend Dev/Review/QA.
+3. **Backend Dev** implements each layer strictly from the plan, applying implementation skills.
+4. **Backend Review** verifies the code against skill checklists and architecture; approves or sends back to Dev.
+5. **Backend QA** tests reviewed code against `FEATURE_PLAN.md` and the skills; logs bugs to `FEATURE_BUGS.md`.
+6. **Frontend track** (runs in parallel with steps 3–5) — Frontend Architect → Dev → Review → QA, using `API_SPEC.md` as the contract.
+7. **Dev** fixes review findings and QA bugs on either track; re-review/re-test as needed.
+8. Story moves 🟡→🟢 in `../project_documents/vendor_app/PROGRESS_TRACKER.md` **only when PRs are open on both repos**.
 
 ### Handoff artifacts
 
 Per-feature artifacts live under **`docs/features/[feature-name]/`**:
 
-| Artifact            | Produced by | Consumed by         | Purpose                                            |
-| ------------------- | ----------- | ------------------- | -------------------------------------------------- |
-| `FEATURE_PLAN.md`   | Architect   | Dev, Review, QA     | The design: endpoints, rules, complexity tier      |
-| `FEATURE_TASKS.md`  | Architect   | Dev                 | Ordered implementation tasks                       |
-| `DOMAIN_MODEL.md`   | Architect   | Dev                 | Entities, value objects, aggregates, invariants    |
-| `FEATURE_BUGS.md`   | QA          | Dev                 | Bugs with repro steps + skill references           |
+| Artifact            | Produced by       | Consumed by                        | Purpose                                            |
+| ------------------- | ----------------- | ---------------------------------- | -------------------------------------------------- |
+| `FEATURE_PLAN.md`   | Backend Architect | BE Dev, BE Review, BE QA           | The design: endpoints, rules, complexity tier      |
+| `FEATURE_TASKS.md`  | Backend Architect | BE Dev                             | Ordered backend implementation tasks               |
+| `DOMAIN_MODEL.md`   | Backend Architect | BE Dev                             | Entities, value objects, aggregates, invariants    |
+| `API_SPEC.md`       | Backend Architect | **FE Architect** (trigger), BE Dev | REST contract: request/response shapes, status codes — this artifact triggers the frontend track |
+| `FEATURE_BUGS.md`   | QA (BE or FE)     | Dev (BE or FE)                     | Bugs with repro steps + skill references           |
 
 The plan references **which skills** apply so Dev/Review/QA know the patterns to follow.
 **If a skill contradicts the `FEATURE_PLAN`, the plan wins** — escalate to the Architect.
