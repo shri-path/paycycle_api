@@ -13,7 +13,7 @@ import { SupplyListRepository } from './database/supply-list.repository';
 import { SubscriptionRepository } from './database/subscription.repository';
 import { StaffDirectoryAdapter } from './adapters/staff-directory.adapter';
 import { CustomerDirectoryAdapter } from './adapters/customer-directory.adapter';
-import { DeliveryStatsZeroStubAdapter } from './adapters/delivery-stats-zero-stub.adapter';
+import { DeliveryStatsAdapter } from '@/modules/delivery/delivery-stats.adapter';
 import { CreateSupplyListService } from './commands/create-supply-list/create-supply-list.service';
 import { UpdateSupplyListService } from './commands/update-supply-list/update-supply-list.service';
 import { ArchiveSupplyListService } from './commands/archive-supply-list/archive-supply-list.service';
@@ -48,8 +48,8 @@ const supplyListRepository = new SupplyListRepository();
 const subscriptionRepository = new SubscriptionRepository();
 const staffDirectory = new StaffDirectoryAdapter();
 const customerDirectory = new CustomerDirectoryAdapter();
-// Stub until US-006 swaps the real DeliveryStats adapter here.
-const deliveryStats = new DeliveryStatsZeroStubAdapter();
+// US-006 real adapter (replaces the US-005 zero stub).
+const deliveryStats = new DeliveryStatsAdapter();
 const auditLogger = new AuditLogger(logger);
 
 const createService = new CreateSupplyListService(

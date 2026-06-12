@@ -39,6 +39,11 @@ model User {
   customers                 Customer[]
   // Supply-list assignments this user (owner) created (US-005).
   supplyListAssignmentsMade SupplyListStaff[]    @relation("SupplyListStaffAssignedBy")
+  // Delivery tracking back-relations (US-006).
+  dailySuppliesMarked       DailySupply[]        @relation("DailySupplyMarkedBy")
+  supplyOverridesMade       SupplyOverride[]     @relation("SupplyOverrideChangedBy")
+  extraChargesAdded         SupplyExtraCharge[]  @relation("SupplyExtraChargeAddedBy")
+  leavesCreated             Leave[]              @relation("LeaveCreatedBy")
 
   @@index([phone])
   @@index([email])
@@ -125,6 +130,7 @@ model Vendor {
   vendorCustomers     VendorCustomer[]
   supplyLists         SupplyList[]
   supplyListCustomers SupplyListCustomer[]
+  dailySupplies       DailySupply[]
 
   @@index([referralCode])
   @@index([category])
@@ -461,6 +467,7 @@ model SupplyList {
   staff         SupplyListStaff[]
   schedule      SupplyListSchedule[]
   subscriptions SupplyListCustomer[]
+  dailySupplies DailySupply[]
 
   @@index([vendorId])
   @@index([isActive])
@@ -529,9 +536,11 @@ model SupplyListCustomer {
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  vendor     Vendor     @relation(fields: [vendorId], references: [id], onDelete: Restrict)
-  supplyList SupplyList @relation(fields: [supplyListId], references: [id], onDelete: Cascade)
-  customer   Customer   @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  vendor        Vendor        @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  supplyList    SupplyList    @relation(fields: [supplyListId], references: [id], onDelete: Cascade)
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  dailySupplies DailySupply[]
+  leaves        Leave[]
 
   // NOTE: the (supplyListId, customerId) uniqueness is enforced by a PARTIAL
   // unique index (`supply_list_customers_active_uq`, WHERE end_date IS NULL),
@@ -548,4 +557,153 @@ model SupplyListCustomer {
   @@index([deletedAt])
   @@index([supplyListId, isActive])
   @@map("supply_list_customers")
+}
+
+// =============================================================================
+// MODULE 07: DAILY OPERATIONS (US-006)
+// =============================================================================
+
+enum DailySupplyStatus {
+  PENDING
+  DELIVERED
+  LEAVE
+  AUTO_MARKED
+  CANCELLED
+
+  @@map("daily_supply_status")
+}
+
+enum ActorRole {
+  CUSTOMER
+  VENDOR_OWNER
+  VENDOR_STAFF
+  SYSTEM
+
+  @@map("actor_role")
+}
+
+enum LeaveType {
+  CUSTOMER_REQUESTED
+  VENDOR_MARKED
+  SYSTEM
+
+  @@map("leave_type")
+}
+
+model DailySupply {
+  id BigInt @id @default(autoincrement())
+
+  // Cross-aggregate references by ID (denormalized for vendor/list scoped queries).
+  vendorId             BigInt @map("vendor_id")
+  supplyListCustomerId BigInt @map("supply_list_customer_id")
+  supplyListId         BigInt @map("supply_list_id")
+
+  serviceDate DateTime          @map("service_date") @db.Date
+  status      DailySupplyStatus @default(PENDING)
+
+  quantity    Decimal @db.Decimal(10, 3)
+  unit        String  @db.VarChar(20)
+  ratePerUnit Decimal @map("rate_per_unit") @db.Decimal(10, 2)
+  baseAmount  Decimal @map("base_amount") @db.Decimal(10, 2) // quantity × ratePerUnit
+  finalAmount Decimal @map("final_amount") @db.Decimal(10, 2) // baseAmount + Σ extra charges
+
+  isAutoMarked   Boolean   @default(false) @map("is_auto_marked")
+  markedByUserId BigInt?   @map("marked_by_user_id")
+  markedAt       DateTime? @map("marked_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendor       Vendor             @relation(fields: [vendorId], references: [id], onDelete: Restrict)
+  subscription SupplyListCustomer @relation(fields: [supplyListCustomerId], references: [id], onDelete: Cascade)
+  supplyList   SupplyList         @relation(fields: [supplyListId], references: [id], onDelete: Cascade)
+  markedByUser User?              @relation("DailySupplyMarkedBy", fields: [markedByUserId], references: [id], onDelete: SetNull)
+
+  overrides    SupplyOverride[]
+  extraCharges SupplyExtraCharge[]
+
+  @@unique([supplyListCustomerId, serviceDate], map: "uq_daily_supplies_list_customer_date")
+  @@index([vendorId])
+  @@index([supplyListCustomerId])
+  @@index([supplyListId])
+  @@index([serviceDate])
+  @@index([status])
+  @@index([markedByUserId])
+  @@index([vendorId, serviceDate])
+  @@index([serviceDate, status])
+  @@index([supplyListId, serviceDate, status])
+  @@map("daily_supplies")
+}
+
+// Immutable append-only marking audit trail (no updatedAt / deletedAt).
+model SupplyOverride {
+  id BigInt @id @default(autoincrement())
+
+  dailySupplyId    BigInt     @map("daily_supply_id")
+  changedByUserId  BigInt?    @map("changed_by_user_id")
+  actorRole        ActorRole? @map("actor_role")
+  previousStatus   String?    @map("previous_status") @db.VarChar(20)
+  newStatus        String?    @map("new_status") @db.VarChar(20)
+  previousQuantity Decimal?   @map("previous_quantity") @db.Decimal(10, 3)
+  newQuantity      Decimal?   @map("new_quantity") @db.Decimal(10, 3)
+  comment          String?    @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  dailySupply   DailySupply @relation(fields: [dailySupplyId], references: [id], onDelete: Cascade)
+  changedByUser User?       @relation("SupplyOverrideChangedBy", fields: [changedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([dailySupplyId])
+  @@index([changedByUserId])
+  @@index([createdAt])
+  @@map("supply_overrides")
+}
+
+// =============================================================================
+// MODULE 08: EXTRA CHARGES & LEAVES (US-006)
+// =============================================================================
+
+model SupplyExtraCharge {
+  id BigInt @id @default(autoincrement())
+
+  dailySupplyId BigInt     @map("daily_supply_id")
+  amount        Decimal    @db.Decimal(10, 2) // non-zero; positive = charge, negative = discount
+  comment       String     @db.Text // mandatory reason
+  addedByUserId BigInt?    @map("added_by_user_id")
+  addedByRole   ActorRole? @map("added_by_role")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  dailySupply DailySupply @relation(fields: [dailySupplyId], references: [id], onDelete: Cascade)
+  addedByUser User?       @relation("SupplyExtraChargeAddedBy", fields: [addedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([dailySupplyId])
+  @@index([addedByUserId])
+  @@index([createdAt])
+  @@map("supply_extra_charges")
+}
+
+model Leave {
+  id BigInt @id @default(autoincrement())
+
+  supplyListCustomerId BigInt    @map("supply_list_customer_id")
+  startDate            DateTime  @map("start_date") @db.Date
+  endDate              DateTime  @map("end_date") @db.Date
+  leaveType            LeaveType @default(CUSTOMER_REQUESTED) @map("leave_type")
+  reason               String?   @db.Text
+  createdByUserId      BigInt?   @map("created_by_user_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  subscription  SupplyListCustomer @relation(fields: [supplyListCustomerId], references: [id], onDelete: Cascade)
+  createdByUser User?              @relation("LeaveCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([supplyListCustomerId])
+  @@index([startDate])
+  @@index([endDate])
+  @@index([createdByUserId])
+  @@index([startDate, endDate])
+  @@map("leaves")
 }
