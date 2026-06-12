@@ -46,6 +46,12 @@ const permissions = [
   { name: 'subscription:write', resource: 'subscription', action: 'write', description: 'Manage customer subscriptions (owner only)' },
   // US-007 Audit & Accountability — read access to the activity log (owner default; forward-compat for staff delegation)
   { name: 'audit:read', resource: 'audit', action: 'read', description: 'View audit / activity logs (owner only in v1)' },
+  // US-010 Dashboard — owner-only financial surfaces
+  { name: 'dashboard:read', resource: 'dashboard', action: 'read', description: 'View owner dashboard, supply forecast, outstanding aging (owner only)' },
+  { name: 'vendor-settings:read', resource: 'vendor-settings', action: 'read', description: 'View vendor automation settings (owner only)' },
+  { name: 'vendor-settings:update', resource: 'vendor-settings', action: 'update', description: 'Update vendor automation settings (owner only)' },
+  // US-010 Staff dashboard — held by both owner and staff
+  { name: 'staff-dashboard:read', resource: 'staff-dashboard', action: 'read', description: 'View staff dashboard (owner: any staff; staff: self only)' },
 ];
 
 // Staff-grantable permission keys (per-membership grants, NOT role-level).
@@ -115,6 +121,8 @@ async function seed() {
     // US-005 — staff read-side for supply lists & subscriptions
     'list:read',
     'subscription:read',
+    // US-010 — staff dashboard (self-only, enforced in handler)
+    'staff-dashboard:read',
   ];
   const staffPerms = permissionRecords.filter((p) => staffPermissionNames.includes(p.name));
   for (const perm of staffPerms) {

@@ -137,6 +137,7 @@ model Vendor {
   payments            Payment[]
   vendorSubscriptions VendorSubscription[]
   subscriptionInvoices SubscriptionInvoice[]
+  vendorSettings      VendorSettings?
 
   @@index([referralCode])
   @@index([category])
@@ -891,6 +892,34 @@ model VendorSubscriptionHistory {
   @@index([createdAt])
   @@index([eventType])
   @@map("vendor_subscription_history")
+}
+
+// =============================================================================
+// US-010: VENDOR SETTINGS (single source of truth for auto-mark / auto-send)
+// Replaces vendor.auto_mark_enabled / auto_send_bills / auto_send_time (deprecated).
+// =============================================================================
+
+model VendorSettings {
+  id BigInt @id @default(autoincrement())
+
+  vendorId BigInt @unique @map("vendor_id")
+
+  autoMarkEnabled      Boolean @default(true)  @map("auto_mark_enabled")
+  autoSendBillsEnabled Boolean @default(false) @map("auto_send_bills_enabled")
+  autoSendBillsTime    String  @default("20:00") @map("auto_send_bills_time") @db.VarChar(5) // "HH:mm"
+
+  notificationPreferences Json @default("{}") @map("notification_preferences")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("vendor_settings")
 }
 
 model SubscriptionInvoice {

@@ -19,6 +19,8 @@ import {
   subscriptionPlansRouter,
   subscriptionRouter,
 } from './modules/subscription/subscription.routes';
+import dashboardRouter from './modules/dashboard/dashboard.routes';
+import vendorSettingsRouter from './modules/vendor-settings/vendor-settings.routes';
 
 export function createApp() {
   const app = express();
@@ -77,6 +79,8 @@ export function createApp() {
   app.use(`${apiPrefix}/vendors`, auditRoutes);
   app.use(apiPrefix, subscriptionPlansRouter);
   app.use(`${apiPrefix}/vendors`, subscriptionRouter);
+  app.use(`${apiPrefix}/vendors`, dashboardRouter);
+  app.use(`${apiPrefix}/vendors`, vendorSettingsRouter);
 
   setupSwagger(app);
 
