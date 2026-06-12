@@ -14,6 +14,7 @@ import staffRoutes from './modules/staff/staff.routes';
 import supplyListRoutes from './modules/supply-list/supply-list.routes';
 import deliveryRoutes from './modules/delivery/delivery.routes';
 import customerRoutes from './modules/customer/customer.routes';
+import auditRoutes from './modules/audit/audit.routes';
 
 export function createApp() {
   const app = express();
@@ -69,6 +70,7 @@ export function createApp() {
   app.use(`${apiPrefix}/vendors`, supplyListRoutes);
   app.use(`${apiPrefix}/vendors`, deliveryRoutes);
   app.use(`${apiPrefix}/vendors`, customerRoutes);
+  app.use(`${apiPrefix}/vendors`, auditRoutes);
 
   setupSwagger(app);
 

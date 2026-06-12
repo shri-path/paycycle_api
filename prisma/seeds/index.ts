@@ -44,6 +44,8 @@ const permissions = [
   { name: 'list:assign_staff', resource: 'list', action: 'assign_staff', description: 'Assign staff to supply lists (owner only)' },
   { name: 'subscription:read', resource: 'subscription', action: 'read', description: 'View customer subscriptions' },
   { name: 'subscription:write', resource: 'subscription', action: 'write', description: 'Manage customer subscriptions (owner only)' },
+  // US-007 Audit & Accountability — read access to the activity log (owner default; forward-compat for staff delegation)
+  { name: 'audit:read', resource: 'audit', action: 'read', description: 'View audit / activity logs (owner only in v1)' },
 ];
 
 // Staff-grantable permission keys (per-membership grants, NOT role-level).
