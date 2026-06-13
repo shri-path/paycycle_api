@@ -47,6 +47,18 @@ export class InvalidCreditPeriodError extends Error {
   }
 }
 
+export class InvalidConcurrencyLimitError extends Error {
+  readonly code = 'INVALID_CONCURRENCY_LIMIT';
+
+  constructor(value: unknown) {
+    super(
+      `Invalid bulkOperationConcurrencyLimit "${String(value)}". Must be an integer between 1 and 500.`
+    );
+    this.name = 'InvalidConcurrencyLimitError';
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
 export class InvalidBulkDateError extends Error {
   readonly code = 'INVALID_BULK_DATE';
 

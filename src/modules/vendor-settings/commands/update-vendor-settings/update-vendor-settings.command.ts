@@ -15,6 +15,7 @@ import {
   InvalidNotificationPreferencesError,
   InvalidCreditLimitError,
   InvalidCreditPeriodError,
+  InvalidConcurrencyLimitError,
 } from '../../domain/vendor-settings.errors';
 
 export interface UpdateVendorSettingsInput {
@@ -53,7 +54,8 @@ export class UpdateVendorSettingsCommand {
           err instanceof InvalidTimeOfDayError ||
           err instanceof InvalidNotificationPreferencesError ||
           err instanceof InvalidCreditLimitError ||
-          err instanceof InvalidCreditPeriodError
+          err instanceof InvalidCreditPeriodError ||
+          err instanceof InvalidConcurrencyLimitError
         ) {
           throw new ValidationError(err.message);
         }

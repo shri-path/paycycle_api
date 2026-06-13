@@ -10,6 +10,7 @@ import {
   InvalidNotificationPreferencesError,
   InvalidCreditLimitError,
   InvalidCreditPeriodError,
+  InvalidConcurrencyLimitError,
 } from './vendor-settings.errors';
 import { VendorSettingsUpdatedEvent } from './events/vendor-settings-updated.domain-event';
 import { NotificationPreferencesUpdatedEvent } from './events/notification-preferences-updated.domain-event';
@@ -115,7 +116,7 @@ export class VendorSettingsEntity {
     // 5. bulkOperationConcurrencyLimit must be integer 1..500
     const limit = this._props.bulkOperationConcurrencyLimit;
     if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
-      throw new Error(`bulkOperationConcurrencyLimit must be an integer between 1 and 500.`);
+      throw new InvalidConcurrencyLimitError(limit);
     }
   }
 

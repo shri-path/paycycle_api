@@ -67,7 +67,7 @@ export const bulkMarkLeaveSchema = z
       .optional(),
     all: z.boolean().optional(),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be in YYYY-MM-DD format'),
-    reason: z.string().max(500, 'reason must be at most 500 characters').optional(),
+    reason: z.string().trim().max(500, 'reason must be at most 500 characters').optional(),
   })
   .strict()
   .refine(
@@ -122,6 +122,7 @@ export const bulkSendRemindersSchema = z
     all: z.boolean().optional(),
     messageTemplate: z
       .string()
+      .trim()
       .max(1000, 'messageTemplate must be at most 1000 characters')
       .optional(),
   })
