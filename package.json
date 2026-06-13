@@ -21,6 +21,8 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seeds/index.ts",
+    "db:seed:demo": "tsx prisma/seeds/demo.ts",
+    "db:reset:demo": "prisma migrate reset --force && tsx prisma/seeds/index.ts && tsx prisma/seeds/demo.ts",
     "db:studio": "prisma studio",
     "swagger:generate": "tsx src/infrastructure/swagger/generate.ts",
     "prepare": "husky"

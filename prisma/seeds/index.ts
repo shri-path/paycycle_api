@@ -622,7 +622,7 @@ async function seedUS011DevData(vendorId: bigint, userId: bigint): Promise<void>
       defaultCreditPeriodDays: 30,
       bulkOperationConcurrencyLimit: 50,
       autoSendBillsEnabled: false,
-      autoSendBillsHour: 8,
+      autoSendBillsTime: '08:00',
       notificationPreferences: {},
     },
   });
