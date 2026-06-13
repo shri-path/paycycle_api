@@ -1,8 +1,15 @@
 export class ArgumentInvalidException extends Error {
+  public readonly statusCode = 422;
+  public readonly code = 'DOMAIN_VALIDATION_ERROR';
+
   constructor(message: string) {
     super(message);
     this.name = 'ArgumentInvalidException';
     Error.captureStackTrace(this, this.constructor);
+  }
+
+  toJSON() {
+    return { code: this.code, message: this.message };
   }
 }
 

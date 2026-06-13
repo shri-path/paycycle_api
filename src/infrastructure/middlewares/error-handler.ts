@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
-import { AppError } from '@/common/errors/app-error';
+import { AppError, ArgumentInvalidException } from '@/common/errors/app-error';
 import { logError } from '@/infrastructure/logger/logger';
 import { isProduction } from '@/infrastructure/config';
 
@@ -27,6 +27,18 @@ export const errorHandler = (
       success: false,
       error: {
         ...json,
+        correlationId,
+      },
+    });
+    return;
+  }
+
+  if (error instanceof ArgumentInvalidException) {
+    res.status(422).json({
+      success: false,
+      error: {
+        code: 'DOMAIN_VALIDATION_ERROR',
+        message: error.message,
         correlationId,
       },
     });

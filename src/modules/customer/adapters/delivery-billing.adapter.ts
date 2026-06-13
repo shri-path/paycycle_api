@@ -65,7 +65,7 @@ export class DeliveryBillingAdapter implements IDeliveryBillingPort {
         JOIN supply_list_customers slc ON slc.id = ds.supply_list_customer_id
         WHERE ds.vendor_id = ${vendorId}
           AND slc.customer_id = ANY(${customerIds})
-          AND ds.status = ANY(ARRAY['DELIVERED','AUTO_MARKED'])
+          AND ds.status IN ('DELIVERED','AUTO_MARKED')
         GROUP BY slc.customer_id
       `,
       prisma.$queryRaw<Array<{ customer_id: bigint; total: string }>>`
