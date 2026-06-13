@@ -1,7 +1,5 @@
 /**
- * UpdateVendorSettingsCommand — Command (mutates state, returns DTO).
- * Upsert semantics: creates defaults then applies patch on first call.
- * Emits VendorSettingsUpdatedEvent after successful persistence.
+ * UpdateNotificationPreferencesCommand — replaces only the notificationPreferences blob.
  */
 import { logger } from '@/infrastructure/logger/logger';
 import { ValidationError } from '@/common/errors/app-error';
@@ -9,26 +7,20 @@ import { IVendorSettingsRepository } from '../../database/vendor-settings.reposi
 import { VendorSettingsEntity } from '../../domain/vendor-settings.entity';
 import { VendorSettingsMapper } from '../../vendor-settings.mapper';
 import { VendorSettingsDto } from '../../vendor-settings.types';
-import { VendorSettingsPatch } from '../../domain/vendor-settings.types';
-import {
-  InvalidTimeOfDayError,
-  InvalidNotificationPreferencesError,
-  InvalidCreditLimitError,
-  InvalidCreditPeriodError,
-} from '../../domain/vendor-settings.errors';
+import { InvalidNotificationPreferencesError } from '../../domain/vendor-settings.errors';
 
-export interface UpdateVendorSettingsInput {
+export interface UpdateNotificationPreferencesInput {
   vendorId: bigint;
-  patch: VendorSettingsPatch;
+  notificationPreferences: Record<string, unknown>;
   performedByUserId: bigint;
   correlationId?: string;
 }
 
-export class UpdateVendorSettingsCommand {
+export class UpdateNotificationPreferencesCommand {
   constructor(private readonly repo: IVendorSettingsRepository) {}
 
-  async execute(input: UpdateVendorSettingsInput): Promise<VendorSettingsDto> {
-    const { vendorId, patch, performedByUserId, correlationId } = input;
+  async execute(input: UpdateNotificationPreferencesInput): Promise<VendorSettingsDto> {
+    const { vendorId, notificationPreferences, performedByUserId, correlationId } = input;
     const metadata = {
       correlationId: correlationId ?? 'unknown',
       userId: performedByUserId.toString(),
@@ -47,14 +39,9 @@ export class UpdateVendorSettingsCommand {
       }
 
       try {
-        entity.update(patch, metadata);
+        entity.updateNotificationPreferences(notificationPreferences, metadata);
       } catch (err) {
-        if (
-          err instanceof InvalidTimeOfDayError ||
-          err instanceof InvalidNotificationPreferencesError ||
-          err instanceof InvalidCreditLimitError ||
-          err instanceof InvalidCreditPeriodError
-        ) {
+        if (err instanceof InvalidNotificationPreferencesError) {
           throw new ValidationError(err.message);
         }
         throw err;

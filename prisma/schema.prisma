@@ -47,6 +47,8 @@ model User {
   // US-008: Customer management back-relations.
   customersCreated          Customer[]           @relation("CustomerCreatedBy")
   paymentsRecorded          Payment[]            @relation("PaymentRecordedBy")
+  // US-011: Bulk operations back-relation.
+  bulkOperationsPerformed   BulkOperationLog[]   @relation("BulkOpPerformedBy")
 
   @@index([phone])
   @@index([email])
@@ -138,6 +140,7 @@ model Vendor {
   vendorSubscriptions VendorSubscription[]
   subscriptionInvoices SubscriptionInvoice[]
   vendorSettings      VendorSettings?
+  bulkOperations      BulkOperationLog[]   @relation("BulkOpVendor")
 
   @@index([referralCode])
   @@index([category])
@@ -897,6 +900,7 @@ model VendorSubscriptionHistory {
 // =============================================================================
 // US-010: VENDOR SETTINGS (single source of truth for auto-mark / auto-send)
 // Replaces vendor.auto_mark_enabled / auto_send_bills / auto_send_time (deprecated).
+// US-011: Extended with defaultCreditLimit, defaultCreditPeriodDays, bulkOperationConcurrencyLimit.
 // =============================================================================
 
 model VendorSettings {
@@ -910,6 +914,11 @@ model VendorSettings {
 
   notificationPreferences Json @default("{}") @map("notification_preferences")
 
+  // US-011: credit defaults + bulk concurrency
+  defaultCreditLimit            Decimal? @map("default_credit_limit") @db.Decimal(10, 2)
+  defaultCreditPeriodDays       Int?     @map("default_credit_period_days")
+  bulkOperationConcurrencyLimit Int      @default(50) @map("bulk_operation_concurrency_limit")
+
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
@@ -920,6 +929,68 @@ model VendorSettings {
   @@index([deletedAt])
   @@index([createdAt])
   @@map("vendor_settings")
+}
+
+// =============================================================================
+// US-011: BULK OPERATION LOG
+// =============================================================================
+
+enum BulkOperationType {
+  MARK_LEAVE
+  ADJUST_RATE
+  SEND_REMINDERS
+
+  @@map("bulk_operation_type")
+}
+
+enum BulkOperationTargetType {
+  ALL
+  SUBSCRIPTION
+  CUSTOMER
+
+  @@map("bulk_operation_target_type")
+}
+
+enum BulkOperationStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+
+  @@map("bulk_operation_status")
+}
+
+model BulkOperationLog {
+  id BigInt @id @default(autoincrement())
+
+  vendorId          BigInt                  @map("vendor_id")
+  operationType     BulkOperationType       @map("operation_type")
+  targetType        BulkOperationTargetType @map("target_type")
+  targetId          BigInt?                 @map("target_id")
+  affectedCount     Int                     @default(0) @map("affected_count")
+  status            BulkOperationStatus     @default(PENDING)
+  metadata          Json                    @default("{}")
+  errorMessage      String?                 @map("error_message") @db.Text
+  performedByUserId BigInt                  @map("performed_by_user_id")
+
+  startedAt   DateTime  @default(now()) @map("started_at")
+  completedAt DateTime? @map("completed_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  vendor          Vendor @relation("BulkOpVendor", fields: [vendorId], references: [id], onDelete: Restrict)
+  performedByUser User   @relation("BulkOpPerformedBy", fields: [performedByUserId], references: [id], onDelete: Restrict)
+
+  @@index([vendorId])
+  @@index([status])
+  @@index([operationType])
+  @@index([performedByUserId])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@index([vendorId, status])
+  @@map("bulk_operations_log")
 }
 
 model SubscriptionInvoice {

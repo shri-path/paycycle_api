@@ -52,6 +52,10 @@ const permissions = [
   { name: 'vendor-settings:update', resource: 'vendor-settings', action: 'update', description: 'Update vendor automation settings (owner only)' },
   // US-010 Staff dashboard — held by both owner and staff
   { name: 'staff-dashboard:read', resource: 'staff-dashboard', action: 'read', description: 'View staff dashboard (owner: any staff; staff: self only)' },
+  // US-011 Bulk Operations + Notification Preferences
+  { name: 'bulk-operation:write', resource: 'bulk-operation', action: 'write', description: 'Trigger bulk operations (mark leave, adjust rate, send reminders) — owner only' },
+  { name: 'bulk-operation:read', resource: 'bulk-operation', action: 'read', description: 'View bulk operation status — owner only' },
+  { name: 'notification-preferences:update', resource: 'notification-preferences', action: 'update', description: 'Update vendor notification preferences — owner only' },
 ];
 
 // Staff-grantable permission keys (per-membership grants, NOT role-level).
@@ -282,6 +286,11 @@ async function seed() {
     // US-009: dev vendor subscription (Starter plan + history + invoices)
     // =========================================================================
     await seedDevVendorSubscription(testVendorId);
+
+    // =========================================================================
+    // US-011: dev vendor settings (credit defaults, concurrency, bulk ops log)
+    // =========================================================================
+    await seedUS011DevData(testVendorId, testUser.id);
   }
 
   console.log('✅ Seeding complete!');
@@ -592,6 +601,88 @@ async function seedDevVendorSubscription(vendorId: bigint): Promise<void> {
   });
 
   console.log(`✓ Dev vendor Starter subscription seeded (id=${sub.id.toString()})`);
+}
+
+/**
+ * US-011: Seed VendorSettings with credit defaults + bulk op concurrency,
+ * plus 3 sample BulkOperationLog rows for the dev vendor.
+ */
+async function seedUS011DevData(vendorId: bigint, userId: bigint): Promise<void> {
+  // Upsert VendorSettings with US-011 fields
+  await prisma.vendorSettings.upsert({
+    where: { vendorId },
+    update: {
+      defaultCreditLimit: 2000,
+      defaultCreditPeriodDays: 30,
+      bulkOperationConcurrencyLimit: 50,
+    },
+    create: {
+      vendorId,
+      defaultCreditLimit: 2000,
+      defaultCreditPeriodDays: 30,
+      bulkOperationConcurrencyLimit: 50,
+      autoSendBillsEnabled: false,
+      autoSendBillsHour: 8,
+      notificationPreferences: {},
+    },
+  });
+  console.log('✓ Dev VendorSettings credit defaults seeded');
+
+  // 3 sample bulk operation log rows (idempotent: skip if any already exist for this vendor)
+  const existing = await prisma.bulkOperationLog.count({ where: { vendorId } });
+  if (existing > 0) {
+    console.log('✓ Dev BulkOperationLog rows already present — skipping');
+    return;
+  }
+
+  const now = new Date();
+
+  await prisma.bulkOperationLog.createMany({
+    data: [
+      {
+        vendorId,
+        performedByUserId: userId,
+        operationType: 'MARK_LEAVE',
+        targetType: 'ALL',
+        targetId: null,
+        status: 'COMPLETED',
+        affectedCount: 12,
+        metadata: { date: '2026-07-01', summary: { customersAffected: 12, skipped: 0 } },
+        errorMessage: null,
+        startedAt: new Date(now.getTime() - 60000),
+        completedAt: now,
+      },
+      {
+        vendorId,
+        performedByUserId: userId,
+        operationType: 'ADJUST_RATE',
+        targetType: 'SUBSCRIPTION',
+        targetId: null,
+        status: 'COMPLETED',
+        affectedCount: 8,
+        metadata: { effectiveDate: '2026-07-01', summary: { listsAffected: 2, subscriptionsUpdated: 8 } },
+        errorMessage: null,
+        startedAt: new Date(now.getTime() - 120000),
+        completedAt: new Date(now.getTime() - 115000),
+      },
+      {
+        vendorId,
+        performedByUserId: userId,
+        operationType: 'SEND_REMINDERS',
+        targetType: 'CUSTOMER',
+        targetId: null,
+        status: 'FAILED',
+        affectedCount: 0,
+        metadata: { summary: { sent: 0, failed: 3 } },
+        errorMessage: 'Notification service unavailable',
+        startedAt: new Date(now.getTime() - 180000),
+        completedAt: new Date(now.getTime() - 178000),
+      },
+    ],
+    skipDuplicates: true,
+  });
+
+  console.log('✓ Dev BulkOperationLog rows seeded (3 sample rows)');
 }
 
 seed()

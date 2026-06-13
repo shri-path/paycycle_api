@@ -22,3 +22,39 @@ export class InvalidNotificationPreferencesError extends Error {
     Error.captureStackTrace(this, this.constructor);
   }
 }
+
+export class InvalidCreditLimitError extends Error {
+  readonly code = 'INVALID_CREDIT_LIMIT';
+
+  constructor(value: unknown) {
+    super(
+      `Invalid defaultCreditLimit "${String(value)}". Must be a non-negative decimal string with max 10 digits and 2 decimal places.`
+    );
+    this.name = 'InvalidCreditLimitError';
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+export class InvalidCreditPeriodError extends Error {
+  readonly code = 'INVALID_CREDIT_PERIOD';
+
+  constructor(value: unknown) {
+    super(
+      `Invalid defaultCreditPeriodDays "${String(value)}". Must be an integer between 1 and 365.`
+    );
+    this.name = 'InvalidCreditPeriodError';
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+
+export class InvalidBulkDateError extends Error {
+  readonly code = 'INVALID_BULK_DATE';
+
+  constructor(value: string) {
+    super(
+      `Invalid bulk operation date "${value}". Date must be today or in the future (Asia/Kolkata).`
+    );
+    this.name = 'InvalidBulkDateError';
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
