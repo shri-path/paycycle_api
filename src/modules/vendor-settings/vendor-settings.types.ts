@@ -9,6 +9,10 @@ export interface VendorSettingsDto {
   autoSendBillsEnabled: boolean;
   autoSendBillsTime: string;
   notificationPreferences: Record<string, unknown>;
+  // US-011
+  defaultCreditLimit: number | null;
+  defaultCreditPeriodDays: number | null;
+  bulkOperationConcurrencyLimit: number;
   createdAt: string;
   updatedAt: string;
 }

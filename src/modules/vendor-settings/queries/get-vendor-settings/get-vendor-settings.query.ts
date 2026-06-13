@@ -27,6 +27,9 @@ export class GetVendorSettingsQuery {
       autoSendBillsEnabled: defaultProps.autoSendBillsEnabled,
       autoSendBillsTime: defaultProps.autoSendBillsTime,
       notificationPreferences: defaultProps.notificationPreferences,
+      defaultCreditLimit: null,
+      defaultCreditPeriodDays: null,
+      bulkOperationConcurrencyLimit: defaultProps.bulkOperationConcurrencyLimit,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };

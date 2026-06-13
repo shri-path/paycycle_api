@@ -12,6 +12,9 @@ export interface VendorSettingsRow {
   autoSendBillsEnabled: boolean;
   autoSendBillsTime: string;
   notificationPreferences: Record<string, unknown>;
+  defaultCreditLimit: string | null;
+  defaultCreditPeriodDays: number | null;
+  bulkOperationConcurrencyLimit: number;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;

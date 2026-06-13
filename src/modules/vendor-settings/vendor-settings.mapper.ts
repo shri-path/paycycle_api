@@ -19,6 +19,9 @@ export class VendorSettingsMapper {
       autoSendBillsEnabled: record.autoSendBillsEnabled,
       autoSendBillsTime: record.autoSendBillsTime,
       notificationPreferences: record.notificationPreferences as Record<string, unknown>,
+      defaultCreditLimit: record.defaultCreditLimit ? record.defaultCreditLimit.toString() : null,
+      defaultCreditPeriodDays: record.defaultCreditPeriodDays,
+      bulkOperationConcurrencyLimit: record.bulkOperationConcurrencyLimit,
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
       deletedAt: record.deletedAt,
@@ -34,6 +37,9 @@ export class VendorSettingsMapper {
       autoSendBillsEnabled: row.autoSendBillsEnabled,
       autoSendBillsTime: row.autoSendBillsTime,
       notificationPreferences: row.notificationPreferences,
+      defaultCreditLimit: row.defaultCreditLimit,
+      defaultCreditPeriodDays: row.defaultCreditPeriodDays,
+      bulkOperationConcurrencyLimit: row.bulkOperationConcurrencyLimit,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });
@@ -46,6 +52,9 @@ export class VendorSettingsMapper {
     autoSendBillsEnabled: boolean;
     autoSendBillsTime: string;
     notificationPreferences: Record<string, unknown>;
+    defaultCreditLimit: string | null;
+    defaultCreditPeriodDays: number | null;
+    bulkOperationConcurrencyLimit: number;
   } {
     const props = entity.getProps();
     return {
@@ -54,6 +63,9 @@ export class VendorSettingsMapper {
       autoSendBillsEnabled: props.autoSendBillsEnabled,
       autoSendBillsTime: props.autoSendBillsTime,
       notificationPreferences: props.notificationPreferences,
+      defaultCreditLimit: props.defaultCreditLimit,
+      defaultCreditPeriodDays: props.defaultCreditPeriodDays,
+      bulkOperationConcurrencyLimit: props.bulkOperationConcurrencyLimit,
     };
   }
 
@@ -66,6 +78,9 @@ export class VendorSettingsMapper {
       autoSendBillsEnabled: row.autoSendBillsEnabled,
       autoSendBillsTime: row.autoSendBillsTime,
       notificationPreferences: row.notificationPreferences,
+      defaultCreditLimit: row.defaultCreditLimit !== null ? Number(row.defaultCreditLimit) : null,
+      defaultCreditPeriodDays: row.defaultCreditPeriodDays,
+      bulkOperationConcurrencyLimit: row.bulkOperationConcurrencyLimit,
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
     };

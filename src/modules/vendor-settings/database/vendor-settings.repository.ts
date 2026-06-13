@@ -31,12 +31,18 @@ export class VendorSettingsRepository implements IVendorSettingsRepository {
           autoSendBillsEnabled: data.autoSendBillsEnabled,
           autoSendBillsTime: data.autoSendBillsTime,
           notificationPreferences: data.notificationPreferences as Prisma.InputJsonValue,
+          defaultCreditLimit: data.defaultCreditLimit,
+          defaultCreditPeriodDays: data.defaultCreditPeriodDays,
+          bulkOperationConcurrencyLimit: data.bulkOperationConcurrencyLimit,
         },
         update: {
           autoMarkEnabled: data.autoMarkEnabled,
           autoSendBillsEnabled: data.autoSendBillsEnabled,
           autoSendBillsTime: data.autoSendBillsTime,
           notificationPreferences: data.notificationPreferences as Prisma.InputJsonValue,
+          defaultCreditLimit: data.defaultCreditLimit,
+          defaultCreditPeriodDays: data.defaultCreditPeriodDays,
+          bulkOperationConcurrencyLimit: data.bulkOperationConcurrencyLimit,
         },
       });
       return VendorSettingsMapper.toRow(row);

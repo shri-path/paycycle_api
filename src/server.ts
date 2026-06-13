@@ -10,6 +10,7 @@ import { registerSubscriptionCron } from './modules/subscription/subscription.cr
 import { ExpireOrRenewDueCommand } from './modules/subscription/commands/expire-or-renew-due/expire-or-renew-due.command';
 import { SubscriptionRepository } from './modules/subscription/database/subscription.repository';
 import { PlanRepository } from './modules/subscription/database/plan.repository';
+import { registerVendorSettingsCron } from './modules/vendor-settings/vendor-settings.cron';
 
 async function startServer() {
   try {
@@ -20,6 +21,9 @@ async function startServer() {
     const subRepo = new SubscriptionRepository();
     const expireOrRenewDue = new ExpireOrRenewDueCommand(subRepo, subPlanRepo, logger);
     registerSubscriptionCron(expireOrRenewDue, subRepo, logger);
+
+    // Register vendor-settings cron jobs (gated behind ENABLE_CRON=true)
+    registerVendorSettingsCron();
 
     const app = createApp();
 

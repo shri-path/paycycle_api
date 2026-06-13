@@ -9,6 +9,10 @@ export interface VendorSettingsProps {
   autoSendBillsEnabled: boolean;
   autoSendBillsTime: string; // "HH:mm"
   notificationPreferences: Record<string, unknown>;
+  // US-011
+  defaultCreditLimit: string | null; // Decimal string, e.g. "2000.00"
+  defaultCreditPeriodDays: number | null; // integer 1..365
+  bulkOperationConcurrencyLimit: number; // integer 1..500, default 50
 }
 
 export interface VendorSettingsCreateProps {
@@ -17,6 +21,10 @@ export interface VendorSettingsCreateProps {
   autoSendBillsEnabled?: boolean;
   autoSendBillsTime?: string;
   notificationPreferences?: Record<string, unknown>;
+  // US-011
+  defaultCreditLimit?: string | null;
+  defaultCreditPeriodDays?: number | null;
+  bulkOperationConcurrencyLimit?: number;
 }
 
 export interface VendorSettingsPatch {
@@ -24,4 +32,8 @@ export interface VendorSettingsPatch {
   autoSendBillsEnabled?: boolean;
   autoSendBillsTime?: string;
   notificationPreferences?: Record<string, unknown>;
+  // US-011
+  defaultCreditLimit?: string | null;
+  defaultCreditPeriodDays?: number | null;
+  bulkOperationConcurrencyLimit?: number;
 }
