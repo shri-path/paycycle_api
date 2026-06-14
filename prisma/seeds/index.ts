@@ -56,6 +56,9 @@ const permissions = [
   { name: 'bulk-operation:write', resource: 'bulk-operation', action: 'write', description: 'Trigger bulk operations (mark leave, adjust rate, send reminders) — owner only' },
   { name: 'bulk-operation:read', resource: 'bulk-operation', action: 'read', description: 'View bulk operation status — owner only' },
   { name: 'notification-preferences:update', resource: 'notification-preferences', action: 'update', description: 'Update vendor notification preferences — owner only' },
+  // US-012 Credit Control
+  { name: 'credit:read', resource: 'credit', action: 'read', description: 'View collections, aging, analytics, reminder history (owner only)' },
+  { name: 'credit:write', resource: 'credit', action: 'write', description: 'Manage credit settings, enable prepaid, send reminders, configure reminder config (owner only)' },
 ];
 
 // Staff-grantable permission keys (per-membership grants, NOT role-level).
@@ -291,6 +294,11 @@ async function seed() {
     // US-011: dev vendor settings (credit defaults, concurrency, bulk ops log)
     // =========================================================================
     await seedUS011DevData(testVendorId, testUser.id);
+
+    // =========================================================================
+    // US-012: credit settings, reminder config, payment reminder history
+    // =========================================================================
+    await seedUS012DevData(testVendorId);
   }
 
   console.log('✅ Seeding complete!');
@@ -683,6 +691,104 @@ async function seedUS011DevData(vendorId: bigint, userId: bigint): Promise<void>
   });
 
   console.log('✓ Dev BulkOperationLog rows seeded (3 sample rows)');
+}
+
+/**
+ * US-012: Credit settings, reminder config, and payment reminder history (idempotent).
+ */
+async function seedUS012DevData(vendorId: bigint): Promise<void> {
+  // Resolve customers for this vendor
+  const vcRows = await prisma.vendorCustomer.findMany({
+    where: { vendorId, deletedAt: null },
+    select: { customerId: true },
+    take: 8,
+  });
+  const customerIds = vcRows.map((r) => r.customerId);
+  // Reminder config (auto off, all schedules on, no template, no exclusions)
+  await prisma.reminderConfig.upsert({
+    where: { vendorId },
+    update: {},
+    create: {
+      vendorId,
+      autoRemindersEnabled: false,
+      schedule3Days: true,
+      schedule15Days: true,
+      schedule30Days: true,
+      reminderTemplate: null,
+      excludedCustomerIds: [],
+    },
+  });
+
+  console.log('✓ Dev reminder_config seeded');
+
+  // Credit settings for first 5 customers (mix of types)
+  const settingSeeds = [
+    { creditType: 'NORMAL' as const, warningThresholdPercent: 80, actionOnBreach: 'WARN' as const, minimumBalanceWarning: null },
+    { creditType: 'PREPAID' as const, warningThresholdPercent: 90, actionOnBreach: 'WARN' as const, minimumBalanceWarning: 500 },
+    { creditType: 'UNLIMITED' as const, warningThresholdPercent: 90, actionOnBreach: 'WARN' as const, minimumBalanceWarning: null },
+    { creditType: 'NORMAL' as const, warningThresholdPercent: 95, actionOnBreach: 'PAUSE' as const, minimumBalanceWarning: null },
+    { creditType: 'NORMAL' as const, warningThresholdPercent: 70, actionOnBreach: 'BLOCK' as const, minimumBalanceWarning: null },
+  ];
+
+  const slice = customerIds.slice(0, settingSeeds.length);
+  for (let i = 0; i < slice.length; i++) {
+    const customerId = slice[i]!;
+    const seed = settingSeeds[i]!;
+    await prisma.customerCreditSettings.upsert({
+      where: { customerId },
+      update: {},
+      create: {
+        customerId,
+        creditType: seed.creditType,
+        warningThresholdPercent: seed.warningThresholdPercent,
+        actionOnBreach: seed.actionOnBreach,
+        minimumBalanceWarning: seed.minimumBalanceWarning,
+      },
+    });
+  }
+
+  console.log(`✓ Dev customer_credit_settings seeded (${slice.length} rows)`);
+
+  // 15 payment reminders across first 4 customers with mixed statuses
+  const existing = await prisma.paymentReminder.count({ where: { vendorId } });
+  if (existing > 0) {
+    console.log('✓ Dev payment_reminders already present — skipping');
+    return;
+  }
+
+  const today = new Date();
+  const channels = ['WHATSAPP', 'SMS', 'PUSH'] as const;
+  const statuses = ['SENT', 'DELIVERED', 'FAILED'] as const;
+  const responseTypes = [null, 'FULL_PAYMENT', 'PARTIAL_PAYMENT', null] as const;
+  const targetCustomers = customerIds.slice(0, 4);
+
+  let count = 0;
+  for (let daysBack = 1; daysBack <= 15 && count < 15; daysBack++) {
+    const reminderDate = new Date(today);
+    reminderDate.setDate(reminderDate.getDate() - daysBack);
+
+    const customerId = targetCustomers[count % targetCustomers.length]!;
+
+    try {
+      await prisma.paymentReminder.create({
+        data: {
+          customerId,
+          vendorId,
+          amountDue: 500 + daysBack * 50,
+          reminderDate,
+          sentVia: channels[daysBack % channels.length]!,
+          status: statuses[daysBack % statuses.length]!,
+          responseType: responseTypes[daysBack % responseTypes.length] ?? undefined,
+          responseAmount: responseTypes[daysBack % responseTypes.length] === 'PARTIAL_PAYMENT' ? 250 : undefined,
+        },
+      });
+      count++;
+    } catch {
+      // skip duplicates (unique index on customer+date)
+    }
+  }
+
+  console.log(`✓ Dev payment_reminders seeded (${count} rows)`);
 }
 
 seed()
