@@ -37,13 +37,13 @@ export const enablePrepaidSchema = z
   .object({
     clearOutstandingFirst: z.boolean().default(true),
     minimumBalanceWarning: z.number().finite().min(0).optional(),
-    message: z.string().max(500).optional(),
+    message: z.string().max(500).trim().optional(),
   })
   .strict();
 
 export const singleReminderSchema = z
   .object({
-    customMessage: z.string().max(500).optional(),
+    customMessage: z.string().max(500).trim().optional(),
   })
   .strict();
 
@@ -51,14 +51,17 @@ export const sendBulkSchema = z.discriminatedUnion('target', [
   z
     .object({
       target: z.literal('all_overdue'),
-      customMessage: z.string().max(500).optional(),
+      customMessage: z.string().max(500).trim().optional(),
     })
     .strict(),
   z
     .object({
       target: z.literal('selected'),
-      customerIds: z.array(z.string().min(1)).min(1),
-      customMessage: z.string().max(500).optional(),
+      customerIds: z
+        .array(z.string().min(1))
+        .min(1)
+        .max(100, 'Cannot send to more than 100 customers at once'),
+      customMessage: z.string().max(500).trim().optional(),
     })
     .strict(),
 ]);
@@ -69,7 +72,7 @@ export const updateReminderConfigSchema = z
     schedule3Days: z.boolean().optional(),
     schedule15Days: z.boolean().optional(),
     schedule30Days: z.boolean().optional(),
-    reminderTemplate: z.string().max(2000).nullable().optional(),
+    reminderTemplate: z.string().max(2000).trim().nullable().optional(),
     excludedCustomerIds: z.array(z.string().regex(/^\d+$/)).optional(),
   })
   .strict()
