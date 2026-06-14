@@ -141,6 +141,9 @@ model Vendor {
   subscriptionInvoices SubscriptionInvoice[]
   vendorSettings      VendorSettings?
   bulkOperations      BulkOperationLog[]   @relation("BulkOpVendor")
+  // US-012: credit control back-relations
+  reminderConfig      ReminderConfig?
+  paymentReminders    PaymentReminder[]
 
   @@index([referralCode])
   @@index([category])
@@ -420,6 +423,9 @@ model Customer {
   referredVendorLinks VendorCustomer[]     @relation("VendorCustomerReferrer")
   supplyListCustomers SupplyListCustomer[]
   payments            Payment[]
+  // US-012: credit control back-relations
+  customerCreditSettings CustomerCreditSettings?
+  paymentReminders       PaymentReminder[]
 
   @@index([userId])
   @@index([phone])
@@ -991,6 +997,119 @@ model BulkOperationLog {
   @@index([createdAt])
   @@index([vendorId, status])
   @@map("bulk_operations_log")
+}
+
+// =============================================================================
+// US-012: CREDIT CONTROL & OUTSTANDING MANAGEMENT
+// =============================================================================
+
+enum CreditType {
+  NORMAL
+  PREPAID
+  UNLIMITED
+
+  @@map("credit_type")
+}
+
+enum CreditBreachAction {
+  WARN
+  PAUSE
+  BLOCK
+
+  @@map("credit_breach_action")
+}
+
+enum ReminderChannel {
+  WHATSAPP
+  SMS
+  PUSH
+
+  @@map("reminder_channel")
+}
+
+enum ReminderStatus {
+  SENT
+  DELIVERED
+  FAILED
+
+  @@map("reminder_status")
+}
+
+enum ReminderResponseType {
+  NONE
+  FULL_PAYMENT
+  PARTIAL_PAYMENT
+
+  @@map("reminder_response_type")
+}
+
+model CustomerCreditSettings {
+  id         BigInt   @id @default(autoincrement())
+  customerId BigInt   @unique @map("customer_id")
+
+  creditType              CreditType        @default(NORMAL) @map("credit_type")
+  warningThresholdPercent Int               @default(90) @map("warning_threshold_percent")
+  actionOnBreach          CreditBreachAction @default(WARN) @map("action_on_breach")
+  minimumBalanceWarning   Decimal?          @map("minimum_balance_warning") @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([creditType])
+  @@index([createdAt])
+  @@map("customer_credit_settings")
+}
+
+model ReminderConfig {
+  id       BigInt @id @default(autoincrement())
+  vendorId BigInt @unique @map("vendor_id")
+
+  autoRemindersEnabled Boolean @default(false) @map("auto_reminders_enabled")
+  schedule3Days        Boolean @default(true) @map("schedule_3_days")
+  schedule15Days       Boolean @default(true) @map("schedule_15_days")
+  schedule30Days       Boolean @default(true) @map("schedule_30_days")
+  reminderTemplate     String? @map("reminder_template") @db.Text
+  excludedCustomerIds  Json    @default("[]") @map("excluded_customer_ids")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  @@index([autoRemindersEnabled])
+  @@index([createdAt])
+  @@map("reminder_config")
+}
+
+model PaymentReminder {
+  id           BigInt               @id @default(autoincrement())
+  customerId   BigInt               @map("customer_id")
+  vendorId     BigInt               @map("vendor_id")
+  amountDue    Decimal              @map("amount_due") @db.Decimal(10, 2)
+  reminderDate DateTime             @map("reminder_date") @db.Date
+  sentVia      ReminderChannel      @map("sent_via")
+  status       ReminderStatus       @default(SENT)
+  responseType ReminderResponseType? @map("response_type")
+  responseAmount Decimal?           @map("response_amount") @db.Decimal(10, 2)
+  createdAt    DateTime             @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  vendor   Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  // NOTE: a partial unique index on (customer_id, reminder_date) is added via
+  // raw SQL in the migration (Prisma can't express partial unique). Prevents
+  // duplicate same-day reminders (edge case 8).
+  @@index([customerId])
+  @@index([vendorId])
+  @@index([reminderDate])
+  @@index([customerId, reminderDate])
+  @@index([vendorId, reminderDate])
+  @@index([status])
+  @@map("payment_reminders")
 }
 
 model SubscriptionInvoice {
