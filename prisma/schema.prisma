@@ -49,6 +49,9 @@ model User {
   paymentsRecorded          Payment[]            @relation("PaymentRecordedBy")
   // US-011: Bulk operations back-relation.
   bulkOperationsPerformed   BulkOperationLog[]   @relation("BulkOpPerformedBy")
+  // US-013: language & voice back-relations
+  languagePreference        LanguagePreference?
+  voiceCommandLogs          VoiceCommandLog[]
 
   @@index([phone])
   @@index([email])
@@ -144,6 +147,9 @@ model Vendor {
   // US-012: credit control back-relations
   reminderConfig      ReminderConfig?
   paymentReminders    PaymentReminder[]
+  // US-013: language & voice back-relations
+  messageTemplates    MessageTemplate[]
+  voiceCommandLogs    VoiceCommandLog[]
 
   @@index([referralCode])
   @@index([category])
@@ -1110,6 +1116,112 @@ model PaymentReminder {
   @@index([vendorId, reminderDate])
   @@index([status])
   @@map("payment_reminders")
+}
+
+// =============================================================================
+// US-013: MULTI-LANGUAGE & VOICE INTERFACE
+// =============================================================================
+
+enum SupportedLanguage {
+  EN
+  HI
+  TA
+  TE
+  MR
+  BN
+  KN
+  ML
+  GU
+
+  @@map("supported_language")
+}
+
+enum BillLanguagePolicy {
+  CUSTOMER
+  MY_LANGUAGE
+  ENGLISH
+
+  @@map("bill_language_policy")
+}
+
+enum MessageTemplateType {
+  PAYMENT_REMINDER
+  MONTHLY_BILL
+  DELIVERY_CONFIRMATION
+  LEAVE_CONFIRMATION
+
+  @@map("message_template_type")
+}
+
+model LanguagePreference {
+  id     BigInt @id @default(autoincrement())
+  userId BigInt @unique @map("user_id")
+
+  appLanguage            SupportedLanguage  @default(EN) @map("app_language")
+  secondaryLanguage      SupportedLanguage? @map("secondary_language")
+  voiceCommandsEnabled   Boolean            @default(false) @map("voice_commands_enabled")
+  voiceResponsesEnabled  Boolean            @default(false) @map("voice_responses_enabled")
+  transliterationEnabled Boolean            @default(false) @map("transliteration_enabled")
+  billLanguageDefault    BillLanguagePolicy @default(CUSTOMER) @map("bill_language_default")
+  preferredVoiceAccent   String?            @map("preferred_voice_accent") @db.VarChar(20)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([appLanguage])
+  @@map("language_preferences")
+}
+
+model MessageTemplate {
+  id           BigInt              @id @default(autoincrement())
+  vendorId     BigInt              @map("vendor_id")
+  templateType MessageTemplateType @map("template_type")
+  languageCode SupportedLanguage   @map("language_code")
+  content      String              @map("content") @db.Text
+  isActive     Boolean             @default(true) @map("is_active")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, templateType, languageCode])
+  @@index([vendorId])
+  @@index([templateType])
+  @@index([languageCode])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("message_templates")
+}
+
+model VoiceCommandLog {
+  id              BigInt            @id @default(autoincrement())
+  userId          BigInt            @map("user_id")
+  vendorId        BigInt            @map("vendor_id")
+  languageCode    SupportedLanguage @map("language_code")
+  supplyListId    BigInt?           @map("supply_list_id")
+  customerId      BigInt?           @map("customer_id")
+  transcription   String?           @map("transcription") @db.Text
+  detectedAction  String?           @map("detected_action") @db.VarChar(40)
+  confidenceScore Decimal?          @map("confidence_score") @db.Decimal(5, 2)
+  wasExecuted     Boolean           @default(false) @map("was_executed")
+  executionResult Json?             @map("execution_result")
+  errorMessage    String?           @map("error_message") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([vendorId])
+  @@index([detectedAction])
+  @@index([createdAt])
+  @@map("voice_command_logs")
 }
 
 model SubscriptionInvoice {

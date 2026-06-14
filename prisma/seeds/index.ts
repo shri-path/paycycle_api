@@ -59,6 +59,10 @@ const permissions = [
   // US-012 Credit Control
   { name: 'credit:read', resource: 'credit', action: 'read', description: 'View collections, aging, analytics, reminder history (owner only)' },
   { name: 'credit:write', resource: 'credit', action: 'write', description: 'Manage credit settings, enable prepaid, send reminders, configure reminder config (owner only)' },
+  // US-013 Multi-Language & Voice Interface
+  { name: 'message_template:read', resource: 'message_template', action: 'read', description: 'View message templates (owner only)' },
+  { name: 'message_template:manage', resource: 'message_template', action: 'manage', description: 'Create and update message templates (owner only)' },
+  { name: 'voice:use', resource: 'voice', action: 'use', description: 'Use voice transcription and command execution (owner and staff with marking access)' },
 ];
 
 // Staff-grantable permission keys (per-membership grants, NOT role-level).
@@ -130,6 +134,8 @@ async function seed() {
     'subscription:read',
     // US-010 — staff dashboard (self-only, enforced in handler)
     'staff-dashboard:read',
+    // US-013 — voice use (staff with marking access)
+    'voice:use',
   ];
   const staffPerms = permissionRecords.filter((p) => staffPermissionNames.includes(p.name));
   for (const perm of staffPerms) {
@@ -299,6 +305,11 @@ async function seed() {
     // US-012: credit settings, reminder config, payment reminder history
     // =========================================================================
     await seedUS012DevData(testVendorId);
+
+    // =========================================================================
+    // US-013: message templates + language preference for staff user
+    // =========================================================================
+    await seedUS013DevData(testVendorId, testUser.id);
   }
 
   console.log('✅ Seeding complete!');
@@ -789,6 +800,84 @@ async function seedUS012DevData(vendorId: bigint): Promise<void> {
   }
 
   console.log(`✓ Dev payment_reminders seeded (${count} rows)`);
+}
+
+// =============================================================================
+// US-013: Message templates + language preference dev seed
+// =============================================================================
+
+async function seedUS013DevData(vendorId: bigint, ownerId: bigint): Promise<void> {
+  const TEMPLATE_TYPES = [
+    'PAYMENT_REMINDER',
+    'MONTHLY_BILL',
+    'DELIVERY_CONFIRMATION',
+    'LEAVE_CONFIRMATION',
+  ] as const;
+
+  const TEMPLATE_CONTENTS: Record<string, Record<string, string>> = {
+    PAYMENT_REMINDER: {
+      EN: 'Hello {{customer_name}}, your bill for {{month}} is ₹{{amount}}. Please pay by {{due_date}}. - {{vendor_name}}',
+      HI: 'नमस्ते {{customer_name}}, आपका {{month}} का बिल ₹{{amount}} है। कृपया {{due_date}} तक भुगतान करें। - {{vendor_name}}',
+    },
+    MONTHLY_BILL: {
+      EN: 'Dear {{customer_name}}, your bill for {{month}}: Total ₹{{total_due}}. Pay via UPI: {{upi_id}}. - {{vendor_name}}',
+      HI: 'प्रिय {{customer_name}}, {{month}} का बिल: कुल ₹{{total_due}}। UPI: {{upi_id}}। - {{vendor_name}}',
+    },
+    DELIVERY_CONFIRMATION: {
+      EN: 'Hi {{customer_name}}, {{item}} (qty: {{quantity}}) delivered on {{date}}. - {{vendor_name}}',
+      HI: 'नमस्ते {{customer_name}}, {{item}} (मात्रा: {{quantity}}) {{date}} को दिया गया। - {{vendor_name}}',
+    },
+    LEAVE_CONFIRMATION: {
+      EN: 'Hi {{customer_name}}, your leave from {{from_date}} to {{to_date}} has been noted. - {{vendor_name}}',
+      HI: 'नमस्ते {{customer_name}}, {{from_date}} से {{to_date}} तक की छुट्टी दर्ज की गई। - {{vendor_name}}',
+    },
+  };
+
+  for (const type of TEMPLATE_TYPES) {
+    for (const [lang, content] of Object.entries(TEMPLATE_CONTENTS[type] ?? {})) {
+      const existing = await prisma.messageTemplate.findFirst({
+        where: {
+          vendorId,
+          templateType: type as never,
+          languageCode: lang as never,
+          deletedAt: null,
+        },
+      });
+      if (!existing) {
+        await prisma.messageTemplate.create({
+          data: {
+            vendorId,
+            templateType: type as never,
+            languageCode: lang as never,
+            content,
+            isActive: true,
+          },
+        });
+      }
+    }
+  }
+  console.log('✓ Dev message_templates seeded (EN + HI for all 4 types)');
+
+  // LanguagePreference: owner gets EN defaults; seed a staff user with HI
+  // Staff Active user from US-002 seed (+919000000010)
+  const staffUser = await prisma.user.findUnique({ where: { phone: '+919000000010' } });
+  if (staffUser) {
+    await prisma.languagePreference.upsert({
+      where: { userId: staffUser.id },
+      update: {},
+      create: {
+        userId: staffUser.id,
+        appLanguage: 'HI' as never,
+        secondaryLanguage: null,
+        voiceCommandsEnabled: true,
+        voiceResponsesEnabled: false,
+        transliterationEnabled: true,
+        billLanguageDefault: 'CUSTOMER' as never,
+        preferredVoiceAccent: null,
+      },
+    });
+    console.log('✓ Dev language_preference seeded for staff user (+919000000010 → HI)');
+  }
 }
 
 seed()

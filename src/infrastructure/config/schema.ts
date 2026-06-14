@@ -28,6 +28,11 @@ export const configSchema = z.object({
     defaultPageSize: z.coerce.number().int().positive().default(20),
     maxPageSize: z.coerce.number().int().positive().default(100),
   }),
+  // US-013: Speech-to-Text provider configuration (all optional)
+  speechProvider: z.enum(['stub', 'google', 'bhashini']).default('stub'),
+  googleSpeechKey: z.string().optional(),
+  bhashiniApiKey: z.string().optional(),
+  bhashiniUserId: z.string().optional(),
 });
 
 export type Config = z.infer<typeof configSchema>;
