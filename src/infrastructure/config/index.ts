@@ -25,6 +25,11 @@ function loadConfig() {
       defaultPageSize: process.env['DEFAULT_PAGE_SIZE'],
       maxPageSize: process.env['MAX_PAGE_SIZE'],
     },
+    // US-013: STT provider (all optional with safe defaults)
+    speechProvider: process.env['SPEECH_PROVIDER'] ?? 'stub',
+    googleSpeechKey: process.env['GOOGLE_SPEECH_KEY'],
+    bhashiniApiKey: process.env['BHASHINI_API_KEY'],
+    bhashiniUserId: process.env['BHASHINI_USER_ID'],
   };
 
   try {
