@@ -1,5 +1,6 @@
 import { ICreditBalancePort } from '../../ports/credit-balance.port';
 import { ICreditCustomerPort, CustomerCreditRow } from '../../ports/credit-customer.port';
+import { ICreditSettingsRepository } from '../../database/credit-settings.repository.port';
 import {
   CollectionPriorityVO,
   CollectionPriorityEnum,
@@ -38,7 +39,8 @@ export interface PriorityListResult {
 export class GetPriorityListQuery {
   constructor(
     private readonly balancePort: ICreditBalancePort,
-    private readonly customerPort: ICreditCustomerPort
+    private readonly customerPort: ICreditCustomerPort,
+    private readonly settingsRepo: ICreditSettingsRepository
   ) {}
 
   async execute(vendorId: bigint, sort: SortOption = 'oldest_first'): Promise<PriorityListResult> {
@@ -48,10 +50,19 @@ export class GetPriorityListQuery {
     }
 
     const customerIds = customers.map((c) => c.id);
-    const [balanceMap, oldestDateMap] = await Promise.all([
+    const [balanceMap, oldestDateMap, settingsList] = await Promise.all([
       this.balancePort.getBulkBalances(customerIds, vendorId),
       this.balancePort.getOldestUnpaidServiceDate(customerIds, vendorId),
+      Promise.all(customerIds.map((id) => this.settingsRepo.findByCustomer(id))),
     ]);
+
+    // Build Map<customerId, creditType> — default to 'normal' when no settings row exists
+    const creditTypeMap = new Map<string, string>();
+    for (let i = 0; i < customerIds.length; i++) {
+      const settings = settingsList[i];
+      const key = customerIds[i]!.toString();
+      creditTypeMap.set(key, settings ? settings.getProps().creditType.toLowerCase() : 'normal');
+    }
 
     const today = new Date();
     const high: PriorityCard[] = [];
@@ -93,7 +104,8 @@ export class GetPriorityListQuery {
         customer.creditLimit > 0 ? Math.round((balance / customer.creditLimit) * 100) : 0;
 
       const priority = CollectionPriorityVO.evaluate(daysOverdue, utilization);
-      const card = this._buildCard(customer, balance, daysOverdue, utilization);
+      const creditType = creditTypeMap.get(key);
+      const card = this._buildCard(customer, balance, daysOverdue, utilization, creditType);
 
       if (priority.unpack() === CollectionPriorityEnum.HIGH) high.push(card);
       else if (priority.unpack() === CollectionPriorityEnum.MEDIUM) medium.push(card);
@@ -113,13 +125,15 @@ export class GetPriorityListQuery {
     customer: CustomerCreditRow,
     balance: number,
     daysOverdue: number,
-    utilization: number
+    utilization: number,
+    creditType?: string
   ): PriorityCard {
     return CreditMapper.toPriorityCard({
       customer,
       balance,
       daysOverdue,
       utilizationPercent: utilization,
+      ...(creditType !== undefined ? { creditType } : {}),
     }) as PriorityCard;
   }
 

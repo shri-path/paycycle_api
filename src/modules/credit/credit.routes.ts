@@ -83,7 +83,7 @@ const sendSingleReminderCmd = new SendSingleReminderCommand(
 const updateReminderConfigCmd = new UpdateReminderConfigCommand(reminderConfigRepo, logger);
 
 const getDashboardQry = new GetCollectionsDashboardQuery(balanceAdapter, customerAdapter);
-const getPriorityListQry = new GetPriorityListQuery(balanceAdapter, customerAdapter);
+const getPriorityListQry = new GetPriorityListQuery(balanceAdapter, customerAdapter, settingsRepo);
 const getAnalyticsQry = new GetCollectionAnalyticsQuery(balanceAdapter, customerAdapter);
 const getAgingQry = new GetOutstandingAgingQuery(balanceAdapter, customerAdapter);
 const getReminderHistoryQry = new GetReminderHistoryQuery(reminderRepo, customerAdapter);

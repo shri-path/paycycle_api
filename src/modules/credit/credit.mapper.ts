@@ -147,6 +147,7 @@ export class CreditMapper {
     balance: number;
     daysOverdue: number;
     utilizationPercent: number;
+    creditType?: string;
   }) {
     return {
       customerId: params.customer.id.toString(),
@@ -158,7 +159,7 @@ export class CreditMapper {
       utilizationPercentage: params.utilizationPercent,
       lastPaymentDate: toDate(params.customer.lastPaymentDate),
       paymentScore: params.customer.paymentScore,
-      creditType: 'normal',
+      creditType: params.creditType ?? 'normal',
     };
   }
 
