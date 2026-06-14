@@ -5,6 +5,7 @@
 import { prisma } from '@/infrastructure/database/prisma.client';
 import { Prisma } from '@prisma/client';
 import { ICreditCustomerPort, CustomerCreditRow } from '../ports/credit-customer.port';
+import { NotFoundError } from '@/common/errors/app-error';
 
 function toNum(d: Prisma.Decimal | null | undefined): number {
   return d == null ? 0 : Number(d.toString());
@@ -91,12 +92,17 @@ export class CreditCustomerAdapter implements ICreditCustomerPort {
   }
 
   async setCreditLimit(customerId: bigint, vendorId: bigint, amount: number): Promise<void> {
-    // Update the customer's credit_limit. Scoped to vendorId via vendor_customers join.
-    // We verify the customer belongs to the vendor before calling (done in the command).
+    // Defense-in-depth: verify customer belongs to this vendor at the DB level before mutating.
+    // The command also checks this upstream, but the adapter must not rely solely on callers.
+    const membership = await prisma.vendorCustomer.findFirst({
+      where: { customerId, vendorId, deletedAt: null },
+    });
+    if (!membership) {
+      throw new NotFoundError('Customer not found');
+    }
     await prisma.customer.update({
       where: { id: customerId },
       data: { creditLimit: amount },
     });
-    void vendorId; // already validated upstream
   }
 }

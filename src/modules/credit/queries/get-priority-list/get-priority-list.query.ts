@@ -79,9 +79,8 @@ export class GetPriorityListQuery {
         continue;
       }
 
-      if (balance <= 0) {
-        // Fully paid — include in low priority with 0 outstanding
-        low.push(this._buildCard(customer, 0, 0, 0));
+      if (balance === 0) {
+        // Fully paid — omit from all priority buckets (FEATURE_PLAN: only balance > 0 are aged)
         continue;
       }
 

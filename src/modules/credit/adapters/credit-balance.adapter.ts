@@ -162,18 +162,19 @@ export class CreditBalanceAdapter implements ICreditBalancePort {
   }
 
   async getCollectionTrend(vendorId: bigint, months: string[]): Promise<CollectionTrendRow[]> {
-    const results: CollectionTrendRow[] = [];
-    for (const month of months) {
-      const [billed, collected] = await Promise.all([
-        this.getMonthlyBilled(vendorId, month),
-        this.getMonthlyCollected(vendorId, month),
-      ]);
-      results.push({
-        month,
-        percentage: billed > 0 ? Math.round((collected / billed) * 100) : 0,
-      });
-    }
-    return results;
+    // Fetch all months concurrently instead of sequentially (avoids N+1 round-trips)
+    return Promise.all(
+      months.map(async (month) => {
+        const [billed, collected] = await Promise.all([
+          this.getMonthlyBilled(vendorId, month),
+          this.getMonthlyCollected(vendorId, month),
+        ]);
+        return {
+          month,
+          percentage: billed > 0 ? Math.round((collected / billed) * 100) : 0,
+        };
+      })
+    );
   }
 
   async getTopPayers(vendorId: bigint, month: string, limit: number): Promise<TopPayerRow[]> {
