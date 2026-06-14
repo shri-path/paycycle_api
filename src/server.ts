@@ -11,6 +11,7 @@ import { ExpireOrRenewDueCommand } from './modules/subscription/commands/expire-
 import { SubscriptionRepository } from './modules/subscription/database/subscription.repository';
 import { PlanRepository } from './modules/subscription/database/plan.repository';
 import { registerVendorSettingsCron } from './modules/vendor-settings/vendor-settings.cron';
+import { registerCreditCron } from './modules/credit/credit.cron';
 
 async function startServer() {
   try {
@@ -24,6 +25,9 @@ async function startServer() {
 
     // Register vendor-settings cron jobs (gated behind ENABLE_CRON=true)
     registerVendorSettingsCron();
+
+    // Register credit cron jobs (gated behind ENABLE_CRON=true)
+    registerCreditCron(logger);
 
     const app = createApp();
 
