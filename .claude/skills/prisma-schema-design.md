@@ -256,11 +256,34 @@ Every model MUST have:
 
 ## Step 7: Migration Workflow
 
+> **Migrations live at**: `D:\Shrihari\Sourcecode\personal\paycycle\paycycle_api\prisma\migrations`
+> Each migration is a folder `[timestamp]_[name]/` containing a `migration.sql`.
+
+### Timestamp Prefix — MUST be the current timestamp (ascending, never backdated)
+
+Prisma applies migrations in **lexicographic order of folder name**, and the timestamp prefix is what orders them. A new migration MUST sort **after every existing migration** in the folder. If you ever assign a prefix that is lower than an already-applied migration, Prisma flags it as out-of-order and the migration history is no longer safe to deploy.
+
+**Rule: always derive the prefix from the real current UTC time at the moment you create the folder — never copy a prefix from an example, never hand-pick a round number, never reuse/edit an existing one.** Because wall-clock time only moves forward, a current-timestamp prefix is guaranteed to be greater than all prior migrations, so migrations always run in safe ascending order.
+
+Generate the prefix programmatically (format `YYYYMMDDHHMMSS`, UTC):
+
+```powershell
+# PowerShell (Windows)
+[DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
+```
+
+```bash
+# bash
+date -u +%Y%m%d%H%M%S
+```
+
+Before creating the folder, **verify the new prefix is greater than the last (lexicographically highest) existing migration folder**. If for any reason it is not (e.g. clock skew), bump it to `lastExistingPrefix + 1 second` so ordering is preserved.
+
 ### Creating a Migration
 
 ```bash
 # 1. Edit prisma/schema.prisma
-# 2. Create migration (generates SQL)
+# 2. Create migration (Prisma stamps the folder with the current timestamp)
 npm run migrate:create -- --name [descriptive_name]
 
 # 3. Review generated SQL in prisma/migrations/[timestamp]_[name]/migration.sql
@@ -271,26 +294,29 @@ npm run migrate:deploy
 npm run db:generate
 ```
 
+> Prefer `npm run migrate:create` (above) — it stamps the current timestamp automatically. Only hand-author a migration folder when scripting the SQL directly, and in that case generate the prefix with the command above so it is current and ascending.
+
 ### Migration Naming Convention
 
 ```
-[timestamp]_[action]_[entity]_[detail]
+[current-timestamp]_[action]_[entity]_[detail]
 
-Examples:
-20260601120000_create_pay_cycle_table
-20260601130000_add_status_to_pay_cycle
-20260601140000_create_pay_cycle_employee_junction
-20260601150000_add_index_vendor_status_to_pay_cycle
-20260601160000_create_domain_events_table
+# The timestamp below is illustrative ONLY — generate a fresh current one, do not copy these:
+YYYYMMDDHHMMSS_create_pay_cycle_table
+YYYYMMDDHHMMSS_add_status_to_pay_cycle
+YYYYMMDDHHMMSS_create_pay_cycle_employee_junction
+YYYYMMDDHHMMSS_add_index_vendor_status_to_pay_cycle
+YYYYMMDDHHMMSS_create_domain_events_table
 ```
 
 ### Safe Migration Rules
 
-1. **Never drop columns in production** — Mark as deprecated, remove in next major version
-2. **Add columns as nullable first** — Then backfill, then add NOT NULL constraint
-3. **Never rename columns directly** — Create new, migrate data, drop old
-4. **Always review generated SQL** — Prisma may generate unexpected operations
-5. **Test migrations on a copy of production data** — Before deploying
+1. **Timestamp prefix is the current UTC time** — New migrations must sort after all existing ones (ascending). Never backdate, never reuse, never copy an example prefix. See Step 7.
+2. **Never drop columns in production** — Mark as deprecated, remove in next major version
+3. **Add columns as nullable first** — Then backfill, then add NOT NULL constraint
+4. **Never rename columns directly** — Create new, migrate data, drop old
+5. **Always review generated SQL** — Prisma may generate unexpected operations
+6. **Test migrations on a copy of production data** — Before deploying
 
 ---
 
@@ -416,6 +442,7 @@ await prisma.user.update({
 - [ ] `onDelete` policy is set for all relations (Cascade or SetNull)
 - [ ] Composite indexes exist for common multi-field queries
 - [ ] Value Objects are properly embedded or separated
+- [ ] Migration timestamp prefix is the current UTC time and sorts after all existing migrations (ascending, never backdated)
 - [ ] Migration is reviewed for safety
 - [ ] Seed data includes permissions for new resources
 - [ ] No cross-aggregate object references (only ID references) (from domain-driven-hexagon)
