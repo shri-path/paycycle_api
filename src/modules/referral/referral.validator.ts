@@ -13,14 +13,21 @@ export const vendorIdParamSchema = z.object({
 });
 
 // POST /vendors/:vendorId/referrals/vendor
-export const createVendorReferralSchema = z.object({
-  vendorName: z.string().max(100).optional(),
-  phoneNumber: z
-    .string()
-    .min(10)
-    .max(15)
-    .regex(/^\+?[\d]{10,15}$/, 'Must be a valid phone number (10-15 digits)'),
-});
+export const createVendorReferralSchema = z
+  .object({
+    vendorName: z
+      .string()
+      .max(100)
+      .trim()
+      .optional(),
+    phoneNumber: z
+      .string()
+      .min(10)
+      .max(15)
+      .trim()
+      .regex(/^\+?[\d]{10,15}$/, 'Must be a valid phone number (10-15 digits)'),
+  })
+  .strict();
 
 // GET /vendors/:vendorId/referrals/vendor
 export const listVendorReferralsQuerySchema = z.object({
@@ -49,29 +56,35 @@ export const listTransactionsQuerySchema = z.object({
 });
 
 // POST /vendors/:vendorId/credits/redeem
-export const redeemCreditSchema = z.object({
-  redemptionType: z.enum(['subscription', 'upgrade', 'withdraw']),
-  amount: z.number().positive('Amount must be greater than 0'),
-});
+export const redeemCreditSchema = z
+  .object({
+    redemptionType: z.enum(['subscription', 'upgrade', 'withdraw']),
+    amount: z.number().positive('Amount must be greater than 0'),
+  })
+  .strict();
 
 // POST /vendors/:vendorId/customers/bulk-invite
 export const bulkInviteSchema = z.discriminatedUnion('targetType', [
-  z.object({
-    targetType: z.literal('all_not_on_paycycle'),
-    customerIds: z.array(z.string()).optional(),
-    messageLanguage: z.string().max(10).optional(),
-    customMessage: z.string().max(1000).optional(),
-    autoResend: z.boolean().optional(),
-    maxAttempts: z.number().int().min(1).max(3).optional(),
-  }),
-  z.object({
-    targetType: z.literal('specific'),
-    customerIds: z.array(z.string()).min(1, 'At least one customerId required for specific target'),
-    messageLanguage: z.string().max(10).optional(),
-    customMessage: z.string().max(1000).optional(),
-    autoResend: z.boolean().optional(),
-    maxAttempts: z.number().int().min(1).max(3).optional(),
-  }),
+  z
+    .object({
+      targetType: z.literal('all_not_on_paycycle'),
+      customerIds: z.array(z.string()).optional(),
+      messageLanguage: z.string().max(10).trim().optional(),
+      customMessage: z.string().max(1000).trim().optional(),
+      autoResend: z.boolean().optional(),
+      maxAttempts: z.number().int().min(1).max(3).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      targetType: z.literal('specific'),
+      customerIds: z.array(z.string()).min(1, 'At least one customerId required for specific target'),
+      messageLanguage: z.string().max(10).trim().optional(),
+      customMessage: z.string().max(1000).trim().optional(),
+      autoResend: z.boolean().optional(),
+      maxAttempts: z.number().int().min(1).max(3).optional(),
+    })
+    .strict(),
 ]);
 
 // GET /vendors/:vendorId/nearby-vendors
