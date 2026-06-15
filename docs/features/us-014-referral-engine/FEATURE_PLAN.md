@@ -392,5 +392,78 @@ Registered in `src/modules/referral/referral.cron.ts`, gated behind `ENABLE_CRON
 
 ---
 
+## Implementation Deviations (resolved during Dev phase, 2026-06-15)
+
+These are user-confirmed decisions that override the provisional architect defaults above. Any future Review/QA agents must treat these as the canonical implementation contract, not the provisional wording in the sections above.
+
+### DEV-01 — Cash withdrawal DISABLED in v1 (overrides Q5 provisional)
+
+**Decision**: `redemptionType: 'withdraw'` is **rejected immediately** with HTTP 400 (`BadRequestError`). The provisional "PENDING_PAYOUT" path is NOT implemented.
+
+**Error message** (verbatim from implementation):
+> "Cash withdrawal is not available in this version. Please use credits for subscription or upgrade discounts."
+
+**Rationale**: User explicitly disabled withdrawal for v1 safety ("do NOT create a PENDING_PAYOUT path"). The ledger entry model for a PENDING_PAYOUT would have required an unimplemented payout table and ops workflow. A clean 400 with a clear message is safer than a misleading "success" status.
+
+**API impact**: `POST .../credits/redeem` accepts ONLY `redemptionType: 'subscription'` or `'upgrade'`. The Zod validator enforces this with `z.enum(['subscription', 'upgrade', 'withdraw'])` and the command rejects `withdraw` before touching the repository.
+
+**API_SPEC.md**: The `withdraw` option is documented under `redemptionType` as "not available in v1 — returns 400; planned for future release."
+
+**Schema impact**: No payout table, no `PENDING_PAYOUT` ledger status, no withdrawal-threshold check. The `WITHDRAWAL_THRESHOLD` error class from the plan's error-handling table is unused.
+
+---
+
+### DEV-02 — Nearby vendors via locality string-match, distance=null (confirms Q1 provisional)
+
+**Decision**: `GET .../nearby-vendors` uses **locality/area string-match** (same `locality` text) plus category grouping. No PostGIS extension, no lat/long columns, no geocode backfill.
+
+**Response shape**: `distance: null` on every vendor entry; `radius` query param is accepted and echoed back in the response but has no effect on filtering.
+
+**Rationale**: Confirmed by user ("No postgis extension, no lat/long columns, no geocode backfill"). The DB has only `customers.locality` / `area` varchars. PostGIS requires an `earth_distance`/`postgis` extension + backfill migration — deferred to a follow-up user story.
+
+**Future**: When PostGIS is adopted, add `lat`/`lng` columns to `vendors`, a GIST index, a backfill migration, and replace the string-match implementation. The endpoint path and response envelope remain stable; only `distance` becomes a real number.
+
+---
+
+### DEV-03 — Customer ₹50 referral reward = bill discount on `customer_referrals`, no wallet (confirms Q7 provisional)
+
+**Decision**: Customer-to-customer referral reward is recorded as `customer_referrals.referrer_reward_amount = 50` with `CustomerRewardType.BILL_DISCOUNT`. **No customer credit wallet table is introduced.**
+
+**Rationale**: User explicitly said "do NOT introduce a customer wallet table". The ₹50 credit is a billing-level adjustment tracked on the `customer_referrals` row; the vendor's book applies it as a discount on the next bill.
+
+**Future**: If a true customer cash wallet is introduced (separate US), the `referrer_reward_amount` column can be migrated to a wallet credit entry.
+
+---
+
+### DEV-04 — `onPaycycle` / `isAppUser` = `customer.userId IS NOT NULL` proxy
+
+**Decision**: Customer "on PayCycle" status is determined by `customer.userId IS NOT NULL` (i.e. the customer record is linked to a user account). This is the proxy used in invite targeting (`all_not_on_paycycle` skips customers where `userId IS NOT NULL`).
+
+**Rationale**: No dedicated `isAppUser` flag exists. The `userId` FK on `Customer` captures the case where a customer has signed up as a PayCycle user. Agreed with user as the v1 proxy.
+
+---
+
+### DEV-05 — `referralCode` exposed in dashboard response (lazy generation)
+
+**Decision**: `GET .../referrals/dashboard` includes the owner's `referralCode` in the response. If the vendor has no referral code yet, the code is generated lazily at this point and persisted to `vendors.referral_code`.
+
+**Rationale**: User confirmed that the dashboard is the natural place to surface (and lazily create) the referral code, so the owner can copy/share it without first needing to create a referral record.
+
+---
+
+### DEV-06 — Permissions namespaced as `vendor_credit:*` (confirms Q4 provisional)
+
+**Decision**: The new permissions are seeded as `vendor_credit:read` and `vendor_credit:redeem` (not `credit:read` / `credit:redeem`), avoiding collision with US-012's `credit:*` permissions.
+
+**Referral permissions**: `referral:create`, `referral:read`, `referral:invite`.
+
+---
+
+### DEV-07 — Churn = subscription CANCELLED/EXPIRED within 60 days (confirms Q2 provisional)
+
+**Decision**: The clawback sweep uses `subscription status IN (CANCELLED, EXPIRED)` checked within 60 days of the referral's `signupDate` as the churn signal. Soft-deleted vendor is also a hard override.
+
+---
+
 ## Skills Referenced (for Dev/Review)
 `ddd-module-design.md`, `domain-modeling.md`, `prisma-schema-design.md` (current-timestamp migration prefix), `api-contract-design.md`, `validation-schemas.md`, `error-handling.md`, `repository-implementation.md`, `service-implementation.md`, `module-scaffold.md`, `testing-strategy.md`.
