@@ -114,15 +114,8 @@ export class CreateVendorReferralCommand {
   }
 
   private async getReferrerPhone(vendorId: bigint): Promise<string | null> {
-    // Read vendor phone via prisma directly for self-referral guard
-    // (acceptable — same bounded context)
     try {
-      const { prisma } = await import('@/infrastructure/database/prisma.client');
-      const v = await prisma.vendor.findUnique({
-        where: { id: vendorId },
-        select: { phone: true },
-      });
-      return v?.phone ?? null;
+      return await this.repository.getVendorPhone(vendorId);
     } catch {
       return null;
     }

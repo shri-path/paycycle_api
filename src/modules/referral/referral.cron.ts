@@ -11,6 +11,7 @@ import {
   ReferralVendorStatus,
   ReferralRewardKind,
   CreditSourceType,
+  VendorRewardType,
   LeaderboardPeriodType,
   REWARD_AMOUNTS,
 } from './domain/vendor-referral.types';
@@ -33,7 +34,7 @@ function rowToEntity(row: VendorReferralRow): VendorReferral {
       refereeVendorId: row.refereeVendorId,
       referralCode: row.referralCode,
       status: row.status,
-      rewardType: row.rewardType as never,
+      rewardType: row.rewardType as VendorRewardType | null,
       rewardAmount: row.rewardAmount,
       refereeName: row.refereeName,
       refereePhone: row.refereePhone,
@@ -165,21 +166,48 @@ async function runClawbackSweep(): Promise<void> {
       if (!isChurned) continue;
 
       try {
-        const { prisma } = await import('@/infrastructure/database/prisma.client');
+        // Query the actual amount earned for this referral to avoid over-clawing
+        const actualEarned = await repository.totalEarnedForReferral(row.referrerVendorId, row.id);
+        if (actualEarned <= 0) {
+          log.info(
+            { referralId: row.id.toString() },
+            'ClawbackSweep: no credits earned yet — marking clawed back without ledger entry'
+          );
+        }
         await repository.transaction(async (tx) => {
-          await repository.adjustCredit({
-            vendorId: row.referrerVendorId,
-            amount:
-              REWARD_AMOUNTS.SIGNUP_BONUS +
-              REWARD_AMOUNTS.MILESTONE_10 +
-              REWARD_AMOUNTS.MILESTONE_50,
-            description: `Clawback: referee #${refereeId.toString()} churned within ${REWARD_AMOUNTS.CLAWBACK_DAYS} days`,
-            tx,
-          });
-          await prisma.vendorReferral.update({
-            where: { id: row.id },
-            data: { clawedBackAt: new Date() },
-          });
+          if (actualEarned > 0) {
+            await repository.adjustCredit({
+              vendorId: row.referrerVendorId,
+              amount: actualEarned,
+              description: `Clawback: referee #${refereeId.toString()} churned within ${REWARD_AMOUNTS.CLAWBACK_DAYS} days`,
+              tx,
+            });
+          }
+          await repository.updateVendorReferral(
+            VendorReferral.fromPersistence({
+              id: row.id,
+              props: {
+                referrerVendorId: row.referrerVendorId,
+                refereeVendorId: row.refereeVendorId,
+                referralCode: row.referralCode,
+                status: row.status,
+                rewardType: row.rewardType as VendorRewardType | null,
+                rewardAmount: row.rewardAmount,
+                refereeName: row.refereeName,
+                refereePhone: row.refereePhone,
+                signupDate: row.signupDate,
+                firstCustomerDate: row.firstCustomerDate,
+                milestone10At: row.milestone10At,
+                milestone50At: row.milestone50At,
+                revenueShareUntil: row.revenueShareUntil,
+                clawedBackAt: new Date(),
+              },
+              createdAt: row.createdAt,
+              updatedAt: row.updatedAt,
+              deletedAt: row.deletedAt,
+            }),
+            tx
+          );
         });
         clawedBack++;
       } catch (err) {

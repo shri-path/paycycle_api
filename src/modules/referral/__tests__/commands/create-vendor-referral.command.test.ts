@@ -41,6 +41,7 @@ function makeRepo(
   return {
     countTodayReferrals: jest.fn().mockResolvedValue(0),
     getVendorName: jest.fn().mockResolvedValue('Milk Depot'),
+    getVendorPhone: jest.fn().mockResolvedValue('+911111111111'),
     getVendorReferralCode: jest.fn().mockResolvedValue('MILK1234'),
     isReferralCodeUnique: jest.fn().mockResolvedValue(true),
     setVendorReferralCode: jest.fn().mockResolvedValue(undefined),
@@ -65,25 +66,27 @@ function makeRepo(
     findCustomerReferralSummary: jest.fn(),
     findTopReferrers: jest.fn(),
     listCustomerReferrals: jest.fn(),
+    listRecentCustomerReferrals: jest.fn(),
     insertInvites: jest.fn(),
+    findActiveInviteByPhone: jest.fn(),
+    findInvitesDueForResend: jest.fn(),
     listInvites: jest.fn(),
     updateInviteStatus: jest.fn(),
+    incrementInviteAttempt: jest.fn(),
     findNearbyVendors: jest.fn(),
     listLeaderboard: jest.fn(),
     upsertLeaderboardEntry: jest.fn(),
+    getVendorInfo: jest.fn(),
+    countVendorCustomers: jest.fn(),
+    findVendorNamesByIds: jest.fn(),
+    findCustomerNamesByIds: jest.fn(),
+    findCustomersForInvite: jest.fn(),
+    listCreditTransactionsByReferral: jest.fn(),
+    totalEarnedForReferral: jest.fn(),
     transaction: jest.fn(),
     ...overrides,
   } as unknown as jest.Mocked<IReferralRepository>;
 }
-
-// Mock the prisma import for getReferrerPhone
-jest.mock('@/infrastructure/database/prisma.client', () => ({
-  prisma: {
-    vendor: {
-      findUnique: jest.fn().mockResolvedValue({ phone: '+911111111111' }),
-    },
-  },
-}));
 
 describe('CreateVendorReferralCommand', () => {
   describe('rate limit', () => {
@@ -125,10 +128,10 @@ describe('CreateVendorReferralCommand', () => {
 
   describe('self-referral block', () => {
     it('should throw ForbiddenError when referee phone matches referrer phone', async () => {
-      const { prisma } = await import('@/infrastructure/database/prisma.client');
-      (prisma.vendor.findUnique as jest.Mock).mockResolvedValueOnce({ phone: '+919999999999' });
-
-      const repo = makeRepo();
+      // Make the repository return the same phone as the referee's phone
+      const repo = makeRepo({
+        getVendorPhone: jest.fn().mockResolvedValue('+919999999999'),
+      });
       const cmd = new CreateVendorReferralCommand(repo, logger);
 
       await expect(

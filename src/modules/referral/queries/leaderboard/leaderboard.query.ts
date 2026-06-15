@@ -41,12 +41,7 @@ export class LeaderboardQuery {
     );
 
     const vendorIds = rows.map((r) => r.vendorId);
-    const { prisma } = await import('@/infrastructure/database/prisma.client');
-    const vendors = await prisma.vendor.findMany({
-      where: { id: { in: vendorIds } },
-      select: { id: true, name: true },
-    });
-    const vendorNameMap = new Map(vendors.map((v) => [v.id, v.name]));
+    const vendorNameMap = await this.repository.findVendorNamesByIds(vendorIds);
 
     return {
       rows: rows.map((r) => ({

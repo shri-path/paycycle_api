@@ -35,15 +35,10 @@ export class NearbyVendorsQuery {
 
     const radius = input.radius ?? 2;
 
-    // Get caller's vendor info
-    const callerName = await this.repository.getVendorName(input.vendorId);
-    const { prisma } = await import('@/infrastructure/database/prisma.client');
-    const callerVendor = await prisma.vendor.findUnique({
-      where: { id: input.vendorId },
-      select: { name: true, category: true },
-    });
+    // Get caller's vendor info (through repository port — no direct Prisma)
+    const callerVendor = await this.repository.getVendorInfo(input.vendorId);
 
-    // Get caller's customer count (on PayCycle = vendor_customers count)
+    // Get referred vendor IDs so we can flag "yourReferral"
     const { rows: callerReferrals } = await this.repository.listVendorReferrals(
       input.vendorId,
       1,
@@ -56,10 +51,8 @@ export class NearbyVendorsQuery {
     // Find nearby vendors (locality match)
     const nearbyVendors = await this.repository.findNearbyVendors(input.vendorId);
 
-    // Get caller's customer count on PayCycle
-    const callerCustomerCount = await prisma.vendorCustomer.count({
-      where: { vendorId: input.vendorId, deletedAt: null },
-    });
+    // Get caller's customer count (through repository port)
+    const callerCustomerCount = await this.repository.countVendorCustomers(input.vendorId);
 
     // Build byCategory
     const byCategory: NearbyVendorsResult['byCategory'] = {};
@@ -87,7 +80,7 @@ export class NearbyVendorsQuery {
 
     return {
       yourBusiness: {
-        name: callerVendor?.name ?? callerName ?? 'Your Business',
+        name: callerVendor?.name ?? 'Your Business',
         customersOnPaycycle: callerCustomerCount,
         rankInArea: rank,
       },

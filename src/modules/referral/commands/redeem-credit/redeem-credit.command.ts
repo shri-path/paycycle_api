@@ -57,23 +57,23 @@ export class RedeemCreditCommand {
       throw new BadRequestError('Redemption amount must be greater than 0');
     }
 
-    // Check balance
-    const creditRow = await this.repository.getVendorCreditBalance(input.vendorId);
-    const available = creditRow?.availableCredits ?? 0;
-
-    if (input.amount > available) {
-      this.logger.warn(
-        { vendorId: input.vendorId.toString(), available, requested: input.amount },
-        'Insufficient credits for redemption'
-      );
-      throw new ConflictError(
-        `Insufficient credits. Available: ₹${available}, Requested: ₹${input.amount}`
-      );
-    }
-
-    // Atomic deduction + subscription port call
+    // Atomic balance-check + deduction in a single transaction to prevent TOCTOU race.
+    // The balance is re-read inside the transaction before decrementing.
     let newBalance = 0;
     await this.repository.transaction(async (tx) => {
+      const creditRow = await this.repository.getVendorCreditBalance(input.vendorId, tx);
+      const available = creditRow?.availableCredits ?? 0;
+
+      if (input.amount > available) {
+        this.logger.warn(
+          { vendorId: input.vendorId.toString(), available, requested: input.amount },
+          'Insufficient credits for redemption'
+        );
+        throw new ConflictError(
+          `Insufficient credits. Available: ₹${available}, Requested: ₹${input.amount}`
+        );
+      }
+
       const txnRow = await this.repository.useCredit({
         vendorId: input.vendorId,
         amount: input.amount,

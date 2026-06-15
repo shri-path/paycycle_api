@@ -3,7 +3,7 @@
  * All handlers are arrow functions. vendorId is taken from req.roleContext.
  */
 import { Request, Response, NextFunction } from 'express';
-import { sendSuccess, sendListResponse } from '@/common/api-wrapper/response.util';
+import { sendSuccess, sendCreated, sendListResponse } from '@/common/api-wrapper/response.util';
 import { CreateVendorReferralCommand } from './commands/create-vendor-referral/create-vendor-referral.command';
 import { RedeemCreditCommand } from './commands/redeem-credit/redeem-credit.command';
 import {
@@ -86,7 +86,7 @@ export class ReferralController {
         ...(body.vendorName !== undefined ? { refereeName: body.vendorName } : {}),
       });
 
-      res.status(201).json({ success: true, data: result });
+      sendCreated(res, result);
     } catch (err) {
       next(err);
     }

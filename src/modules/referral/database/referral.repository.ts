@@ -1,7 +1,7 @@
 /**
  * Prisma adapter for IReferralRepository.
  */
-import { Prisma } from '@prisma/client';
+import { Prisma, ReferralInviteStatus } from '@prisma/client';
 import { prisma, PrismaTransaction } from '@/infrastructure/database/prisma.client';
 import { ConflictError } from '@/common/errors/app-error';
 import { VendorReferral } from '../domain/vendor-referral.entity';
@@ -403,8 +403,12 @@ export class ReferralRepository implements IReferralRepository {
     return this.toCreditTransactionRow(txn);
   }
 
-  async getVendorCreditBalance(vendorId: bigint): Promise<VendorCreditRow | null> {
-    const r = await prisma.vendorCredit.findUnique({ where: { vendorId } });
+  async getVendorCreditBalance(
+    vendorId: bigint,
+    tx?: PrismaTransaction
+  ): Promise<VendorCreditRow | null> {
+    const db = tx ?? prisma;
+    const r = await db.vendorCredit.findUnique({ where: { vendorId } });
     if (!r) return null;
     return {
       id: r.id,
@@ -512,6 +516,65 @@ export class ReferralRepository implements IReferralRepository {
   async getVendorName(vendorId: bigint): Promise<string | null> {
     const v = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { name: true } });
     return v?.name ?? null;
+  }
+
+  async getVendorPhone(vendorId: bigint): Promise<string | null> {
+    const v = await prisma.vendor.findUnique({ where: { id: vendorId }, select: { phone: true } });
+    return v?.phone ?? null;
+  }
+
+  async getVendorInfo(vendorId: bigint): Promise<{ name: string; category: string | null } | null> {
+    const v = await prisma.vendor.findUnique({
+      where: { id: vendorId },
+      select: { name: true, category: true },
+    });
+    if (!v) return null;
+    return { name: v.name, category: v.category };
+  }
+
+  async countVendorCustomers(vendorId: bigint): Promise<number> {
+    return prisma.vendorCustomer.count({ where: { vendorId, deletedAt: null } });
+  }
+
+  async findVendorNamesByIds(vendorIds: bigint[]): Promise<Map<bigint, string>> {
+    if (vendorIds.length === 0) return new Map();
+    const vendors = await prisma.vendor.findMany({
+      where: { id: { in: vendorIds } },
+      select: { id: true, name: true },
+    });
+    return new Map(vendors.map((v) => [v.id, v.name]));
+  }
+
+  async findCustomerNamesByIds(customerIds: bigint[]): Promise<Map<bigint, string | null>> {
+    if (customerIds.length === 0) return new Map();
+    const customers = await prisma.customer.findMany({
+      where: { id: { in: customerIds } },
+      select: { id: true, name: true },
+    });
+    return new Map(customers.map((c) => [c.id, c.name]));
+  }
+
+  async listCreditTransactionsByReferral(
+    vendorId: bigint,
+    referralId: bigint
+  ): Promise<CreditTransactionRow[]> {
+    const rows = await prisma.creditTransaction.findMany({
+      where: { vendorId, sourceId: referralId },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map((r) => this.toCreditTransactionRow(r));
+  }
+
+  async totalEarnedForReferral(vendorId: bigint, referralId: bigint): Promise<number> {
+    const result = await prisma.creditTransaction.aggregate({
+      where: {
+        vendorId,
+        sourceId: referralId,
+        transactionType: CreditTransactionType.EARNED,
+      },
+      _sum: { amount: true },
+    });
+    return Number(result._sum.amount ?? 0);
   }
 
   // ============================================================
@@ -635,6 +698,23 @@ export class ReferralRepository implements IReferralRepository {
   // Customer invites
   // ============================================================
 
+  async findCustomersForInvite(
+    vendorId: bigint,
+    options: { customerIds?: bigint[]; excludeOnPaycycle: boolean; limit?: number }
+  ): Promise<Array<{ id: bigint; phone: string; userId: bigint | null; name: string | null }>> {
+    const rows = await prisma.vendorCustomer.findMany({
+      where: {
+        vendorId,
+        deletedAt: null,
+        ...(options.customerIds ? { customerId: { in: options.customerIds } } : {}),
+        ...(options.excludeOnPaycycle ? { customer: { userId: null } } : {}),
+      },
+      include: { customer: { select: { id: true, phone: true, userId: true, name: true } } },
+      ...(options.limit ? { take: options.limit } : {}),
+    });
+    return rows.map((r) => r.customer);
+  }
+
   async insertInvites(
     rows: Array<{
       vendorId: bigint;
@@ -666,6 +746,16 @@ export class ReferralRepository implements IReferralRepository {
     return result.count;
   }
 
+  async findActiveInviteByPhone(
+    vendorId: bigint,
+    phone: string
+  ): Promise<CustomerInviteRow | null> {
+    const r = await prisma.referralCustomerInvite.findFirst({
+      where: { vendorId, phone, status: { in: ['SENT', 'DELIVERED'] }, deletedAt: null },
+    });
+    return r ? this.toInviteRow(r) : null;
+  }
+
   async findInvitesDueForResend(vendorId: bigint): Promise<CustomerInviteRow[]> {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -683,7 +773,10 @@ export class ReferralRepository implements IReferralRepository {
 
   async updateInviteStatus(id: bigint, status: string, tx?: PrismaTransaction): Promise<void> {
     const db = tx ?? prisma;
-    await db.referralCustomerInvite.update({ where: { id }, data: { status: status as never } });
+    await db.referralCustomerInvite.update({
+      where: { id },
+      data: { status: status as ReferralInviteStatus },
+    });
   }
 
   async incrementInviteAttempt(id: bigint, tx?: PrismaTransaction): Promise<void> {

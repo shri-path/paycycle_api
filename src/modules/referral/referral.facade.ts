@@ -7,6 +7,7 @@ import { Logger } from 'pino';
 import { IReferralRepository } from './database/referral.repository.port';
 import {
   ReferralVendorStatus,
+  VendorRewardType,
   ReferralRewardKind,
   CreditSourceType,
   REWARD_AMOUNTS,
@@ -70,7 +71,7 @@ export class ReferralFacade {
           refereeVendorId: referralRow.refereeVendorId,
           referralCode: referralRow.referralCode,
           status: referralRow.status,
-          rewardType: referralRow.rewardType as never,
+          rewardType: referralRow.rewardType as VendorRewardType | null,
           rewardAmount: referralRow.rewardAmount,
           refereeName: referralRow.refereeName,
           refereePhone: referralRow.refereePhone,
@@ -150,11 +151,8 @@ export class ReferralFacade {
   async markInviteSignedUp(vendorId: bigint, phone: string): Promise<void> {
     this.logger.info({ vendorId: vendorId.toString(), phone }, 'ReferralFacade.markInviteSignedUp');
     try {
-      // Find the invite and mark it
-      const { prisma } = await import('@/infrastructure/database/prisma.client');
-      const invite = await prisma.referralCustomerInvite.findFirst({
-        where: { vendorId, phone, status: { in: ['SENT', 'DELIVERED'] }, deletedAt: null },
-      });
+      // Find the invite and mark it — through the repository port
+      const invite = await this.repository.findActiveInviteByPhone(vendorId, phone);
       if (invite) {
         await this.repository.updateInviteStatus(invite.id, 'SIGNED_UP');
       }

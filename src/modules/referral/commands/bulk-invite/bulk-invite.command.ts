@@ -5,7 +5,6 @@
  */
 import { Logger } from 'pino';
 import { BadRequestError } from '@/common/errors/app-error';
-import { prisma } from '@/infrastructure/database/prisma.client';
 import { IReferralRepository } from '../../database/referral.repository.port';
 import { IInviteMessagePort } from '../../ports/invite-message.port';
 
@@ -65,19 +64,16 @@ export class BulkInviteCommand {
       if (!input.customerIds || input.customerIds.length === 0) {
         throw new BadRequestError('customerIds required when targetType is "specific"');
       }
-      const rows = await prisma.vendorCustomer.findMany({
-        where: { vendorId: input.vendorId, customerId: { in: input.customerIds }, deletedAt: null },
-        include: { customer: { select: { id: true, phone: true, userId: true, name: true } } },
+      targetCustomers = await this.repository.findCustomersForInvite(input.vendorId, {
+        customerIds: input.customerIds,
+        excludeOnPaycycle: false,
       });
-      targetCustomers = rows.map((r) => r.customer);
     } else {
       // all_not_on_paycycle: customers of this vendor where userId IS NULL
-      const rows = await prisma.vendorCustomer.findMany({
-        where: { vendorId: input.vendorId, deletedAt: null, customer: { userId: null } },
-        include: { customer: { select: { id: true, phone: true, userId: true, name: true } } },
-        take: 200,
+      targetCustomers = await this.repository.findCustomersForInvite(input.vendorId, {
+        excludeOnPaycycle: true,
+        limit: 200,
       });
-      targetCustomers = rows.map((r) => r.customer);
     }
 
     // Filter: skip those already on PayCycle (userId IS NOT NULL)

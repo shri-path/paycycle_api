@@ -177,7 +177,7 @@ export interface IReferralRepository {
     description?: string;
     tx: PrismaTransaction;
   }): Promise<CreditTransactionRow>;
-  getVendorCreditBalance(vendorId: bigint): Promise<VendorCreditRow | null>;
+  getVendorCreditBalance(vendorId: bigint, tx?: PrismaTransaction): Promise<VendorCreditRow | null>;
   listCreditTransactions(
     vendorId: bigint,
     page: number,
@@ -195,6 +195,18 @@ export interface IReferralRepository {
   setVendorReferralCode(vendorId: bigint, code: string, tx?: PrismaTransaction): Promise<void>;
   isReferralCodeUnique(code: string, excludeVendorId?: bigint): Promise<boolean>;
   getVendorName(vendorId: bigint): Promise<string | null>;
+  getVendorPhone(vendorId: bigint): Promise<string | null>;
+  getVendorInfo(vendorId: bigint): Promise<{ name: string; category: string | null } | null>;
+  countVendorCustomers(vendorId: bigint): Promise<number>;
+  findVendorNamesByIds(vendorIds: bigint[]): Promise<Map<bigint, string>>;
+  findCustomerNamesByIds(customerIds: bigint[]): Promise<Map<bigint, string | null>>;
+
+  // Ledger queries filtered by referral source
+  listCreditTransactionsByReferral(
+    vendorId: bigint,
+    referralId: bigint
+  ): Promise<CreditTransactionRow[]>;
+  totalEarnedForReferral(vendorId: bigint, referralId: bigint): Promise<number>;
 
   // CustomerReferral
   insertCustomerReferral(
@@ -219,6 +231,12 @@ export interface IReferralRepository {
     limit: number
   ): Promise<{ rows: CustomerReferralRow[]; total: number }>;
 
+  // Customer lookup for invite targeting (keeps BulkInviteCommand infrastructure-free)
+  findCustomersForInvite(
+    vendorId: bigint,
+    options: { customerIds?: bigint[]; excludeOnPaycycle: boolean; limit?: number }
+  ): Promise<Array<{ id: bigint; phone: string; userId: bigint | null; name: string | null }>>;
+
   // Customer invites
   insertInvites(
     rows: Array<{
@@ -232,6 +250,7 @@ export interface IReferralRepository {
     tx?: PrismaTransaction
   ): Promise<number>;
   findInvitesDueForResend(vendorId: bigint): Promise<CustomerInviteRow[]>;
+  findActiveInviteByPhone(vendorId: bigint, phone: string): Promise<CustomerInviteRow | null>;
   updateInviteStatus(id: bigint, status: string, tx?: PrismaTransaction): Promise<void>;
   incrementInviteAttempt(id: bigint, tx?: PrismaTransaction): Promise<void>;
 

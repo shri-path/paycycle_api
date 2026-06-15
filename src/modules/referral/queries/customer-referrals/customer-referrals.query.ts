@@ -3,7 +3,6 @@
  */
 import { Logger } from 'pino';
 import { IReferralRepository } from '../../database/referral.repository.port';
-import { prisma } from '@/infrastructure/database/prisma.client';
 
 export interface CustomerReferralsInput {
   vendorId: bigint;
@@ -50,11 +49,7 @@ export class CustomerReferralsQuery {
       ]),
     ];
 
-    const customers = await prisma.customer.findMany({
-      where: { id: { in: customerIds } },
-      select: { id: true, name: true },
-    });
-    const customerNameMap = new Map(customers.map((c) => [c.id, c.name]));
+    const customerNameMap = await this.repository.findCustomerNamesByIds(customerIds);
 
     const recentAdditions = recentRows.map((r) => ({
       referredCustomerName: customerNameMap.get(r.refereeCustomerId) ?? null,
