@@ -63,6 +63,12 @@ const permissions = [
   { name: 'message_template:read', resource: 'message_template', action: 'read', description: 'View message templates (owner only)' },
   { name: 'message_template:manage', resource: 'message_template', action: 'manage', description: 'Create and update message templates (owner only)' },
   { name: 'voice:use', resource: 'voice', action: 'use', description: 'Use voice transcription and command execution (owner and staff with marking access)' },
+  // US-014 Referral Engine — namespaced vendor_credit:* (distinct from US-012 credit:*)
+  { name: 'referral:create', resource: 'referral', action: 'create', description: 'Create vendor referral invites (owner only)' },
+  { name: 'referral:read', resource: 'referral', action: 'read', description: 'View referral dashboard, list, and leaderboard (owner only)' },
+  { name: 'referral:invite', resource: 'referral', action: 'invite', description: 'Bulk-invite customers to join PayCycle (owner only)' },
+  { name: 'vendor_credit:read', resource: 'vendor_credit', action: 'read', description: 'View referral credit balance and transaction ledger (owner only)' },
+  { name: 'vendor_credit:redeem', resource: 'vendor_credit', action: 'redeem', description: 'Redeem referral credits toward subscription or upgrade (owner only)' },
 ];
 
 // Staff-grantable permission keys (per-membership grants, NOT role-level).

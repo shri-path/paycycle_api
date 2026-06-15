@@ -27,6 +27,8 @@ import {
   vendorVoiceRouter,
   voiceCommandRouter,
 } from './modules/voice/voice.routes';
+import { referralRouter } from './modules/referral/referral.routes';
+import { registerReferralCrons } from './modules/referral/referral.cron';
 
 export function createApp() {
   const app = express();
@@ -92,6 +94,11 @@ export function createApp() {
   app.use(`${apiPrefix}/users`, userVoiceRouter);
   app.use(`${apiPrefix}/vendors`, vendorVoiceRouter);
   app.use(`${apiPrefix}/voice`, voiceCommandRouter);
+  // US-014: Referral Engine
+  app.use(`${apiPrefix}/vendors`, referralRouter);
+
+  // Register cron jobs (gated behind ENABLE_CRON=true)
+  registerReferralCrons();
 
   setupSwagger(app);
 
