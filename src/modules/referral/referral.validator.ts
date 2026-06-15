@@ -15,11 +15,7 @@ export const vendorIdParamSchema = z.object({
 // POST /vendors/:vendorId/referrals/vendor
 export const createVendorReferralSchema = z
   .object({
-    vendorName: z
-      .string()
-      .max(100)
-      .trim()
-      .optional(),
+    vendorName: z.string().max(100).trim().optional(),
     phoneNumber: z
       .string()
       .min(10)
@@ -78,7 +74,9 @@ export const bulkInviteSchema = z.discriminatedUnion('targetType', [
   z
     .object({
       targetType: z.literal('specific'),
-      customerIds: z.array(z.string()).min(1, 'At least one customerId required for specific target'),
+      customerIds: z
+        .array(z.string())
+        .min(1, 'At least one customerId required for specific target'),
       messageLanguage: z.string().max(10).trim().optional(),
       customMessage: z.string().max(1000).trim().optional(),
       autoResend: z.boolean().optional(),
