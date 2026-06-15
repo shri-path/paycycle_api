@@ -1252,3 +1252,245 @@ model SubscriptionInvoice {
   @@index([createdAt])
   @@map("subscription_invoices")
 }
+
+// =============================================================================
+// US-014: REFERRAL ENGINE & NETWORK GROWTH
+// =============================================================================
+
+enum ReferralVendorStatus {
+  PENDING
+  SIGNED_UP
+  QUALIFIED
+  REWARDED
+
+  @@map("vendor_referral_status")
+}
+
+enum CustomerReferralStatus {
+  SENT
+  SIGNED_UP
+  QUALIFIED
+  REWARDED
+
+  @@map("customer_referral_status")
+}
+
+enum VendorRewardType {
+  SUBSCRIPTION_DISCOUNT
+  CASH_CREDIT
+  FREE_MONTHS
+
+  @@map("vendor_reward_type")
+}
+
+enum CustomerRewardType {
+  BILL_DISCOUNT
+  FREE_DAYS
+  CASH_CREDIT
+
+  @@map("customer_reward_type")
+}
+
+enum CreditTransactionType {
+  EARNED
+  USED
+  EXPIRED
+  ADJUSTMENT
+
+  @@map("credit_transaction_type")
+}
+
+enum CreditSourceType {
+  VENDOR_REFERRAL
+  CUSTOMER_REFERRAL
+  SUBSCRIPTION_PAYMENT
+  MANUAL
+
+  @@map("credit_source_type")
+}
+
+enum ReferralRewardKind {
+  SIGNUP_BONUS
+  MILESTONE_10
+  MILESTONE_50
+  REVENUE_SHARE
+  CUSTOMER_REFERRAL
+
+  @@map("referral_reward_kind")
+}
+
+enum ReferralInviteStatus {
+  SENT
+  DELIVERED
+  SIGNED_UP
+  FAILED
+
+  @@map("referral_invite_status")
+}
+
+enum LeaderboardPeriodType {
+  WEEKLY
+  MONTHLY
+  ALL_TIME
+
+  @@map("leaderboard_period_type")
+}
+
+model VendorReferral {
+  id BigInt @id @default(autoincrement())
+
+  referrerVendorId BigInt              @map("referrer_vendor_id")
+  refereeVendorId  BigInt?             @map("referee_vendor_id")
+  referralCode     String              @map("referral_code") @db.VarChar(50)
+  status           ReferralVendorStatus @default(PENDING)
+  rewardType       VendorRewardType?   @map("reward_type")
+  rewardAmount     Decimal?            @map("reward_amount") @db.Decimal(10, 2)
+
+  // Referee contact info (before signup)
+  refereeName  String? @map("referee_name") @db.VarChar(100)
+  refereePhone String? @map("referee_phone") @db.VarChar(15)
+
+  // Milestone tracking (delta #B) — idempotency guards
+  signupDate         DateTime? @map("signup_date") @db.Date
+  firstCustomerDate  DateTime? @map("first_customer_date") @db.Date
+  milestone10At      DateTime? @map("milestone_10_at")
+  milestone50At      DateTime? @map("milestone_50_at")
+  revenueShareUntil  DateTime? @map("revenue_share_until") @db.Date
+  clawedBackAt       DateTime? @map("clawed_back_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  // NOTE: partial unique index uq_vendor_referrals_referee ON (referee_vendor_id)
+  // WHERE referee_vendor_id IS NOT NULL is added via raw SQL in the migration (delta #C).
+  // CHECK chk_vendor_referrals_no_self (referee_vendor_id IS NULL OR referee_vendor_id <> referrer_vendor_id)
+  // is also added via raw SQL (delta #D). Prisma cannot express these.
+
+  @@index([referrerVendorId])
+  @@index([refereeVendorId])
+  @@index([referralCode])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([referrerVendorId, status])
+  @@map("vendor_referrals")
+}
+
+model CustomerReferral {
+  id BigInt @id @default(autoincrement())
+
+  vendorId            BigInt                 @map("vendor_id")
+  referrerCustomerId  BigInt                 @map("referrer_customer_id")
+  refereeCustomerId   BigInt                 @map("referee_customer_id")
+  status              CustomerReferralStatus @default(SENT)
+  rewardType          CustomerRewardType?    @map("reward_type")
+  referrerRewardAmount Decimal?             @map("referrer_reward_amount") @db.Decimal(10, 2)
+
+  qualifiedAt DateTime? @map("qualified_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([vendorId])
+  @@index([referrerCustomerId])
+  @@index([refereeCustomerId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+  @@index([vendorId, status])
+  @@map("customer_referrals")
+}
+
+model VendorCredit {
+  id BigInt @id @default(autoincrement())
+
+  vendorId              BigInt  @unique @map("vendor_id")
+  availableCredits      Decimal @default(0) @map("available_credits") @db.Decimal(12, 2)
+  lifetimeCreditsEarned Decimal @default(0) @map("lifetime_credits_earned") @db.Decimal(12, 2)
+  lifetimeCreditsUsed   Decimal @default(0) @map("lifetime_credits_used") @db.Decimal(12, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  creditTransactions CreditTransaction[]
+
+  @@index([vendorId])
+  @@index([createdAt])
+  @@map("vendor_credits")
+}
+
+model CreditTransaction {
+  id BigInt @id @default(autoincrement())
+
+  vendorId        BigInt                @map("vendor_id")
+  vendorCreditId  BigInt                @map("vendor_credit_id")
+  transactionType CreditTransactionType @map("transaction_type")
+  rewardKind      ReferralRewardKind?   @map("reward_kind")
+  amount          Decimal               @db.Decimal(10, 2)
+  balanceAfter    Decimal               @map("balance_after") @db.Decimal(12, 2)
+  sourceType      CreditSourceType?     @map("source_type")
+  sourceId        BigInt?               @map("source_id")
+  description     String?               @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  vendorCredit VendorCredit @relation(fields: [vendorCreditId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId])
+  @@index([vendorCreditId])
+  @@index([transactionType])
+  @@index([createdAt])
+  @@map("credit_transactions")
+}
+
+model ReferralCustomerInvite {
+  id BigInt @id @default(autoincrement())
+
+  vendorId         BigInt               @map("vendor_id")
+  customerId       BigInt?              @map("customer_id")
+  phone            String               @db.VarChar(15)
+  status           ReferralInviteStatus @default(SENT)
+  messageLanguage  String?              @map("message_language") @db.VarChar(10)
+  attemptCount     Int                  @default(1) @map("attempt_count")
+  autoResend       Boolean              @default(true) @map("auto_resend")
+  maxAttempts      Int                  @default(3) @map("max_attempts")
+  sentAt           DateTime?            @map("sent_at")
+  lastAttemptAt    DateTime?            @map("last_attempt_at")
+  signedUpAt       DateTime?            @map("signed_up_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  @@index([vendorId, status])
+  @@index([vendorId])
+  @@index([phone])
+  @@index([deletedAt])
+  @@index([createdAt])
+  @@map("referral_customer_invites")
+}
+
+model ReferralLeaderboard {
+  id BigInt @id @default(autoincrement())
+
+  vendorId          BigInt                @map("vendor_id")
+  periodType        LeaderboardPeriodType @map("period_type")
+  periodStart       DateTime              @map("period_start") @db.Date
+  rankPosition      Int                   @map("rank_position")
+  totalReferrals    Int                   @default(0) @map("total_referrals")
+  qualifiedReferrals Int                  @default(0) @map("qualified_referrals")
+  rewardEarned      Decimal               @default(0) @map("reward_earned") @db.Decimal(12, 2)
+
+  computedAt DateTime @default(now()) @map("computed_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([vendorId, periodType, periodStart])
+  @@index([vendorId])
+  @@index([periodType, periodStart])
+  @@index([rankPosition])
+  @@index([createdAt])
+  @@map("referral_leaderboard")
+}
