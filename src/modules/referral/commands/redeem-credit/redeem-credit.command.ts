@@ -6,6 +6,7 @@ import { Logger } from 'pino';
 import { BadRequestError, ConflictError } from '@/common/errors/app-error';
 import { IReferralRepository } from '../../database/referral.repository.port';
 import { ISubscriptionCreditPort } from '../../ports/subscription-credit.port';
+import { IDashboardCachePort } from '../../ports/dashboard-cache.port';
 import { CreditSourceType } from '../../domain/vendor-referral.types';
 
 export type RedemptionType = 'subscription' | 'upgrade' | 'withdraw';
@@ -28,6 +29,7 @@ export class RedeemCreditCommand {
   constructor(
     private readonly repository: IReferralRepository,
     private readonly subscriptionCreditPort: ISubscriptionCreditPort,
+    private readonly dashboardCache: IDashboardCachePort<unknown>,
     private readonly logger: Logger
   ) {}
 
@@ -86,6 +88,10 @@ export class RedeemCreditCommand {
       });
       newBalance = txnRow.balanceAfter;
     });
+
+    // Redemption changed the available balance — drop the cached dashboard so the
+    // next read reflects the new balance immediately (invalidation after commit).
+    await this.dashboardCache.invalidate(input.vendorId);
 
     // Apply to subscription (stub in v1)
     if (input.redemptionType === 'subscription') {

@@ -16,6 +16,7 @@ import { ReferralRepository } from './database/referral.repository';
 import { CustomerCountAdapter } from './database/customer-count.adapter';
 import { StubSubscriptionCreditAdapter } from './database/subscription-credit.adapter';
 import { StubInviteMessageAdapter } from './database/invite-message.adapter';
+import { dashboardCache } from './database/dashboard-cache.instance';
 
 // Commands
 import { CreateVendorReferralCommand } from './commands/create-vendor-referral/create-vendor-referral.command';
@@ -58,11 +59,21 @@ const subscriptionCreditAdapter = new StubSubscriptionCreditAdapter();
 const inviteMessageAdapter = new StubInviteMessageAdapter();
 
 const createReferralCmd = new CreateVendorReferralCommand(repository, logger);
-export const earnCreditCmd = new EarnCreditCommand(repository, logger);
-const redeemCreditCmd = new RedeemCreditCommand(repository, subscriptionCreditAdapter, logger);
+export const earnCreditCmd = new EarnCreditCommand(repository, dashboardCache, logger);
+const redeemCreditCmd = new RedeemCreditCommand(
+  repository,
+  subscriptionCreditAdapter,
+  dashboardCache,
+  logger
+);
 const bulkInviteCmd = new BulkInviteCommand(repository, inviteMessageAdapter, logger);
 
-const getDashboardQry = new GetDashboardQuery(repository, customerCountAdapter, logger);
+const getDashboardQry = new GetDashboardQuery(
+  repository,
+  customerCountAdapter,
+  dashboardCache,
+  logger
+);
 const listReferralsQry = new ListVendorReferralsQuery(repository, customerCountAdapter, logger);
 const getCreditBalanceQry = new GetCreditBalanceQuery(repository, logger);
 const listTransactionsQry = new ListCreditTransactionsQuery(repository, logger);
@@ -84,7 +95,7 @@ const controller = new ReferralController(
 );
 
 // Export facade for other modules (auth/signup flow)
-export const referralFacade = new ReferralFacade(repository, logger);
+export const referralFacade = new ReferralFacade(repository, dashboardCache, logger);
 
 // === Rate Limiters ===
 const referralCreateLimiter = rateLimit({

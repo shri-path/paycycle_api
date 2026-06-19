@@ -22,6 +22,7 @@ import {
   CustomerReferralRow,
   CustomerInviteRow,
   LeaderboardRow,
+  ReferralEarnedBreakdown,
 } from './referral.repository.port';
 
 function toVendorReferralRow(r: {
@@ -575,6 +576,50 @@ export class ReferralRepository implements IReferralRepository {
       _sum: { amount: true },
     });
     return Number(result._sum.amount ?? 0);
+  }
+
+  async earnedBreakdownByReferral(vendorId: bigint): Promise<Map<bigint, ReferralEarnedBreakdown>> {
+    // Single groupBy over EARNED rows for this vendor, grouped by referral
+    // (sourceId) and rewardKind. Replaces the per-referral ledger N+1.
+    const groups = await prisma.creditTransaction.groupBy({
+      by: ['sourceId', 'rewardKind'],
+      where: {
+        vendorId,
+        transactionType: CreditTransactionType.EARNED,
+        sourceType: CreditSourceType.VENDOR_REFERRAL,
+        sourceId: { not: null },
+      },
+      _sum: { amount: true },
+    });
+
+    const map = new Map<bigint, ReferralEarnedBreakdown>();
+    for (const g of groups) {
+      if (g.sourceId === null) continue;
+      const amount = Number(g._sum.amount ?? 0);
+      const entry =
+        map.get(g.sourceId) ??
+        ({ signup: 0, milestone10: 0, milestone50: 0, revenueShare: 0 } as ReferralEarnedBreakdown);
+
+      switch (g.rewardKind) {
+        case ReferralRewardKind.SIGNUP_BONUS:
+          entry.signup += amount;
+          break;
+        case ReferralRewardKind.MILESTONE_10:
+          entry.milestone10 += amount;
+          break;
+        case ReferralRewardKind.MILESTONE_50:
+          entry.milestone50 += amount;
+          break;
+        case ReferralRewardKind.REVENUE_SHARE:
+          entry.revenueShare += amount;
+          break;
+        default:
+          // Unknown/unmapped reward kinds do not contribute to the breakdown.
+          break;
+      }
+      map.set(g.sourceId, entry);
+    }
+    return map;
   }
 
   // ============================================================

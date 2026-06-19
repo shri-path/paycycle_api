@@ -5,7 +5,8 @@
 import { Logger } from 'pino';
 import { IReferralRepository } from '../../database/referral.repository.port';
 import { ICustomerCountPort } from '../../ports/customer-count.port';
-import { ReferralRewardKind, REWARD_AMOUNTS } from '../../domain/vendor-referral.types';
+import { IDashboardCachePort } from '../../ports/dashboard-cache.port';
+import { REWARD_AMOUNTS } from '../../domain/vendor-referral.types';
 import { ReferralCode } from '../../domain/value-objects/referral-code.vo';
 
 export interface DashboardResult {
@@ -39,12 +40,26 @@ export class GetDashboardQuery {
   constructor(
     private readonly repository: IReferralRepository,
     private readonly customerCountPort: ICustomerCountPort,
+    private readonly cache: IDashboardCachePort<DashboardResult>,
     private readonly logger: Logger
   ) {}
 
   async execute(vendorId: bigint): Promise<DashboardResult> {
     this.logger.info({ vendorId: vendorId.toString() }, 'GetDashboardQuery: fetching dashboard');
 
+    // Serve from per-tenant cache when warm (5-min TTL).
+    const cached = await this.cache.get(vendorId);
+    if (cached) {
+      this.logger.debug({ vendorId: vendorId.toString() }, 'GetDashboardQuery: cache hit');
+      return cached;
+    }
+
+    const result = await this.build(vendorId);
+    await this.cache.set(vendorId, result);
+    return result;
+  }
+
+  private async build(vendorId: bigint): Promise<DashboardResult> {
     // Lazily generate referral code if absent
     let referralCode = await this.repository.getVendorReferralCode(vendorId);
     if (!referralCode) {
@@ -67,77 +82,71 @@ export class GetDashboardQuery {
     // Vendor referrals list
     const { rows: referralRows } = await this.repository.listVendorReferrals(vendorId, 1, 50);
 
-    // Per-referral earnings from credit_transactions
-    const vendorReferralsData = await Promise.all(
-      referralRows.map(async (r) => {
-        const customerCount = r.refereeVendorId
-          ? await this.customerCountPort.activeCustomerCount(r.refereeVendorId)
-          : 0;
+    // --- N+1 elimination ---
+    // 1) Single groupBy aggregate: per-referral earned breakdown across the whole ledger.
+    const earnedByReferral = await this.repository.earnedBreakdownByReferral(vendorId);
 
-        // Compute earned from ledger
-        const { rows: txns } = await this.repository.listCreditTransactions(vendorId, 1, 100);
-        const referralTxns = txns.filter((t) => t.sourceId === r.id);
+    // 2) Single batched query: active customer count for all referee vendors at once.
+    const refereeVendorIds = referralRows
+      .map((r) => r.refereeVendorId)
+      .filter((id): id is bigint => id !== null);
+    const customerCountByVendor =
+      await this.customerCountPort.activeCustomerCountByVendor(refereeVendorIds);
 
-        let signupEarned = 0;
-        let milestone10Earned = 0;
-        let milestone50Earned = 0;
-        let revenueShareEarned = 0;
+    // Per-referral assembly from the pre-built maps (no per-row DB round-trips).
+    const vendorReferralsData = referralRows.map((r) => {
+      const customerCount = r.refereeVendorId
+        ? (customerCountByVendor.get(r.refereeVendorId) ?? 0)
+        : 0;
 
-        for (const t of referralTxns) {
-          switch (t.rewardKind) {
-            case ReferralRewardKind.SIGNUP_BONUS:
-              signupEarned += t.amount;
-              break;
-            case ReferralRewardKind.MILESTONE_10:
-              milestone10Earned += t.amount;
-              break;
-            case ReferralRewardKind.MILESTONE_50:
-              milestone50Earned += t.amount;
-              break;
-            case ReferralRewardKind.REVENUE_SHARE:
-              revenueShareEarned += t.amount;
-              break;
-          }
-        }
+      const breakdown = earnedByReferral.get(r.id) ?? {
+        signup: 0,
+        milestone10: 0,
+        milestone50: 0,
+        revenueShare: 0,
+      };
+      const signupEarned = breakdown.signup;
+      const milestone10Earned = breakdown.milestone10;
+      const milestone50Earned = breakdown.milestone50;
+      const revenueShareEarned = breakdown.revenueShare;
 
-        const total = signupEarned + milestone10Earned + milestone50Earned + revenueShareEarned;
+      const total = signupEarned + milestone10Earned + milestone50Earned + revenueShareEarned;
 
-        // Next milestone
-        let nextMilestone: DashboardResult['vendorReferrals'][0]['nextMilestone'] = null;
-        if (!r.milestone10At) {
-          nextMilestone = {
-            type: '10_customers',
-            reward: REWARD_AMOUNTS.MILESTONE_10,
-            progress: customerCount,
-            target: 10,
-          };
-        } else if (!r.milestone50At) {
-          nextMilestone = {
-            type: '50_customers',
-            reward: REWARD_AMOUNTS.MILESTONE_50,
-            progress: customerCount,
-            target: 50,
-          };
-        }
-
-        return {
-          id: r.id.toString(),
-          referredVendorName:
-            r.refereeName ?? `Vendor #${r.refereeVendorId?.toString() ?? 'unknown'}`,
-          referredDate: r.createdAt.toISOString(),
-          status: r.status,
-          customerCount,
-          earned: {
-            signup: signupEarned,
-            milestone10: milestone10Earned,
-            milestone50: milestone50Earned,
-            revenueShare: revenueShareEarned,
-            total,
-          },
-          nextMilestone,
+      // Next milestone
+      let nextMilestone: DashboardResult['vendorReferrals'][0]['nextMilestone'] = null;
+      if (!r.milestone10At) {
+        nextMilestone = {
+          type: '10_customers',
+          reward: REWARD_AMOUNTS.MILESTONE_10,
+          progress: customerCount,
+          target: 10,
         };
-      })
-    );
+      } else if (!r.milestone50At) {
+        nextMilestone = {
+          type: '50_customers',
+          reward: REWARD_AMOUNTS.MILESTONE_50,
+          progress: customerCount,
+          target: 50,
+        };
+      }
+
+      return {
+        id: r.id.toString(),
+        referredVendorName:
+          r.refereeName ?? `Vendor #${r.refereeVendorId?.toString() ?? 'unknown'}`,
+        referredDate: r.createdAt.toISOString(),
+        status: r.status,
+        customerCount,
+        earned: {
+          signup: signupEarned,
+          milestone10: milestone10Earned,
+          milestone50: milestone50Earned,
+          revenueShare: revenueShareEarned,
+          total,
+        },
+        nextMilestone,
+      };
+    });
 
     // Aggregate totals
     let totalCredits = 0;

@@ -5,12 +5,22 @@
 import { RedeemCreditCommand } from '../../commands/redeem-credit/redeem-credit.command';
 import { IReferralRepository } from '../../database/referral.repository.port';
 import { ISubscriptionCreditPort } from '../../ports/subscription-credit.port';
+import { IDashboardCachePort } from '../../ports/dashboard-cache.port';
 import { BadRequestError, ConflictError } from '@/common/errors/app-error';
 import { CreditSourceType } from '../../domain/vendor-referral.types';
 import pino from 'pino';
 
 const logger = pino({ level: 'silent' });
 const vendorId = BigInt(1);
+
+function makeCache(): jest.Mocked<IDashboardCachePort<unknown>> {
+  return {
+    get: jest.fn().mockResolvedValue(null),
+    set: jest.fn().mockResolvedValue(undefined),
+    invalidate: jest.fn().mockResolvedValue(undefined),
+    clear: jest.fn().mockResolvedValue(undefined),
+  };
+}
 
 function makeRepo(availableCredits = 1000): jest.Mocked<IReferralRepository> {
   const balanceRow = {
@@ -79,7 +89,7 @@ describe('RedeemCreditCommand', () => {
     it('should throw BadRequestError when redemptionType is "withdraw"', async () => {
       const repo = makeRepo();
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       await expect(
         cmd.execute({ vendorId, redemptionType: 'withdraw', amount: 500 })
@@ -89,7 +99,7 @@ describe('RedeemCreditCommand', () => {
     it('should include clear message about withdrawal being unavailable', async () => {
       const repo = makeRepo();
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       await expect(
         cmd.execute({ vendorId, redemptionType: 'withdraw', amount: 500 })
@@ -99,7 +109,7 @@ describe('RedeemCreditCommand', () => {
     it('should NOT call repository on withdrawal attempt', async () => {
       const repo = makeRepo();
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       await expect(
         cmd.execute({ vendorId, redemptionType: 'withdraw', amount: 500 })
@@ -114,7 +124,7 @@ describe('RedeemCreditCommand', () => {
     it('should throw ConflictError when amount exceeds available credits', async () => {
       const repo = makeRepo(100); // only 100 available
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       await expect(
         cmd.execute({ vendorId, redemptionType: 'subscription', amount: 500 })
@@ -124,7 +134,7 @@ describe('RedeemCreditCommand', () => {
     it('should include available and requested amounts in error', async () => {
       const repo = makeRepo(100);
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       await expect(
         cmd.execute({ vendorId, redemptionType: 'subscription', amount: 500 })
@@ -136,7 +146,7 @@ describe('RedeemCreditCommand', () => {
     it('should return APPLIED status for subscription', async () => {
       const repo = makeRepo(1000);
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       const result = await cmd.execute({ vendorId, redemptionType: 'subscription', amount: 100 });
 
@@ -149,7 +159,7 @@ describe('RedeemCreditCommand', () => {
     it('should call applyCreditToNextInvoice for subscription type', async () => {
       const repo = makeRepo(1000);
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       await cmd.execute({ vendorId, redemptionType: 'subscription', amount: 100 });
 
@@ -160,7 +170,7 @@ describe('RedeemCreditCommand', () => {
     it('should call applyCreditToUpgrade for upgrade type', async () => {
       const repo = makeRepo(1000);
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       await cmd.execute({ vendorId, redemptionType: 'upgrade', amount: 200 });
 
@@ -171,7 +181,7 @@ describe('RedeemCreditCommand', () => {
     it('should call transaction and useCredit', async () => {
       const repo = makeRepo(1000);
       const subPort = makeSubCreditPort();
-      const cmd = new RedeemCreditCommand(repo, subPort, logger);
+      const cmd = new RedeemCreditCommand(repo, subPort, makeCache(), logger);
 
       await cmd.execute({ vendorId, redemptionType: 'subscription', amount: 100 });
 
@@ -179,6 +189,32 @@ describe('RedeemCreditCommand', () => {
       expect(repo.transaction).toHaveBeenCalled();
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(repo.useCredit).toHaveBeenCalled();
+    });
+
+    it('should invalidate the dashboard cache for the vendor after redeeming', async () => {
+      const repo = makeRepo(1000);
+      const subPort = makeSubCreditPort();
+      const cache = makeCache();
+      const cmd = new RedeemCreditCommand(repo, subPort, cache, logger);
+
+      await cmd.execute({ vendorId, redemptionType: 'subscription', amount: 100 });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(cache.invalidate).toHaveBeenCalledWith(vendorId);
+    });
+
+    it('should NOT invalidate the cache when the redemption fails (insufficient credits)', async () => {
+      const repo = makeRepo(50);
+      const subPort = makeSubCreditPort();
+      const cache = makeCache();
+      const cmd = new RedeemCreditCommand(repo, subPort, cache, logger);
+
+      await expect(
+        cmd.execute({ vendorId, redemptionType: 'subscription', amount: 100 })
+      ).rejects.toThrow(ConflictError);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(cache.invalidate).not.toHaveBeenCalled();
     });
   });
 });
