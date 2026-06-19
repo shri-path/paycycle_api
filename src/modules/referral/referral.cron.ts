@@ -10,6 +10,8 @@ import { AuditAction } from '@/common/audit/audit-action.enum';
 import { ReferralRepository } from './database/referral.repository';
 import { CustomerCountAdapter } from './database/customer-count.adapter';
 import { SubscriptionInvoiceAdapter } from './database/subscription-invoice.adapter';
+import { StubInviteMessageAdapter } from './database/invite-message.adapter';
+import { IInviteMessagePort } from './ports/invite-message.port';
 import { dashboardCache } from './database/dashboard-cache.instance';
 import {
   ReferralVendorStatus,
@@ -20,7 +22,7 @@ import {
   REWARD_AMOUNTS,
 } from './domain/vendor-referral.types';
 import { VendorReferral } from './domain/vendor-referral.entity';
-import { VendorReferralRow } from './database/referral.repository.port';
+import { VendorReferralRow, IReferralRepository } from './database/referral.repository.port';
 import { referralEvents } from './database/referral-events.instance';
 import {
   ReferralRewardEarnedEvent,
@@ -32,6 +34,15 @@ const repository = new ReferralRepository();
 const customerCountAdapter = new CustomerCountAdapter();
 const subscriptionInvoiceAdapter = new SubscriptionInvoiceAdapter();
 const auditLogger = new AuditLogger(logger);
+const inviteMessagePort: IInviteMessagePort = new StubInviteMessageAdapter();
+
+/**
+ * Max invites processed per InviteResendSweep run (US-15.4). Bounds the per-run
+ * scan/send so a large backlog drains across successive daily runs instead of one
+ * unbounded blast. US-15.5 will layer a ≤50/min rate limiter on top of this cap;
+ * this batch size is deliberately compatible with that future pacing.
+ */
+const INVITE_RESEND_BATCH_SIZE = 100;
 
 /**
  * Emit a referral reward-earned audit entry from a cron path (US-15.2).
@@ -441,9 +452,118 @@ async function runRevenueShareSweep(): Promise<void> {
 // InviteResendSweep — daily 09:00 IST
 // ============================================================
 
-function runInviteResendSweep(): void {
-  const log = logger.child({ cron: 'InviteResendSweep' });
-  log.info('InviteResendSweep: starting — stub (real WhatsApp resend not implemented in v1)');
+/**
+ * Collaborators for {@link runInviteResendSweep}. Injectable so the sweep can be
+ * unit-tested against mocked ports without a live DB; production registration uses
+ * the module-level singletons via the defaults.
+ */
+export interface InviteResendSweepDeps {
+  repository: Pick<
+    IReferralRepository,
+    | 'findInvitesDueForResendBatch'
+    | 'getVendorReferralCode'
+    | 'incrementInviteAttempt'
+    | 'updateInviteStatus'
+    | 'transaction'
+  >;
+  messagePort: IInviteMessagePort;
+  batchSize?: number;
+}
+
+export async function runInviteResendSweep(deps?: InviteResendSweepDeps): Promise<void> {
+  const repo = deps?.repository ?? repository;
+  const messagePort = deps?.messagePort ?? inviteMessagePort;
+  const batchSize = deps?.batchSize ?? INVITE_RESEND_BATCH_SIZE;
+
+  const runCorrelationId = crypto.randomUUID();
+  const log = logger.child({ cron: 'InviteResendSweep', correlationId: runCorrelationId });
+  log.info('InviteResendSweep: starting');
+  try {
+    const due = await repo.findInvitesDueForResendBatch(batchSize);
+
+    let resent = 0;
+    let failedOut = 0; // invites that reached max_attempts this run → marked FAILED
+    let errored = 0; // invites skipped due to an unexpected error
+
+    // Per-vendor referral code is needed to build the invite link. Cache lookups
+    // within a run so a vendor with many due invites is queried once.
+    const referralCodeCache = new Map<string, string | null>();
+
+    for (const invite of due) {
+      try {
+        const vendorKey = invite.vendorId.toString();
+        let referralCode = referralCodeCache.get(vendorKey);
+        if (referralCode === undefined) {
+          referralCode = await repo.getVendorReferralCode(invite.vendorId);
+          referralCodeCache.set(vendorKey, referralCode);
+        }
+
+        if (!referralCode) {
+          // No code on the vendor → cannot build a valid invite link. Skip without
+          // mutating state; a code is normally created when invites are first sent.
+          log.warn(
+            { inviteId: invite.id.toString(), vendorId: vendorKey },
+            'InviteResendSweep: vendor has no referral code — skipping resend'
+          );
+          continue;
+        }
+
+        const referralLink = `https://paycycle.app/join?ref=${referralCode}`;
+        const language = invite.messageLanguage ?? 'hi';
+        const body = `Reminder: join PayCycle using code ${referralCode}: ${referralLink}`;
+
+        // Transport is best-effort. Whether it succeeds or fails we still increment
+        // the attempt (edge case #3): a permanently failing transport must still
+        // count toward max_attempts so the invite eventually stops (anti-spam).
+        const result = await messagePort.send({
+          phone: invite.phone,
+          body,
+          language,
+        });
+        if (!result.success) {
+          log.warn(
+            { inviteId: invite.id.toString() },
+            'InviteResendSweep: transport reported failure — still counting the attempt'
+          );
+        }
+
+        // attempt_count after this resend.
+        const nextAttempt = invite.attemptCount + 1;
+        const reachedMax = nextAttempt >= invite.maxAttempts;
+
+        await repo.transaction(async (tx) => {
+          await repo.incrementInviteAttempt(invite.id, tx);
+          if (reachedMax) {
+            // Anti-spam stop: final allowed attempt sent → mark FAILED so it is
+            // never picked up again.
+            await repo.updateInviteStatus(invite.id, 'FAILED', tx);
+          }
+        });
+
+        resent++;
+        if (reachedMax) {
+          failedOut++;
+          log.info(
+            { inviteId: invite.id.toString(), attemptCount: nextAttempt },
+            'InviteResendSweep: invite reached max attempts — marked FAILED'
+          );
+        }
+      } catch (err) {
+        errored++;
+        log.warn(
+          { inviteId: invite.id.toString(), err },
+          'InviteResendSweep: failed to process invite'
+        );
+      }
+    }
+
+    log.info(
+      { processed: due.length, resent, failedOut, errored, batchSize },
+      'InviteResendSweep: complete'
+    );
+  } catch (err) {
+    log.error({ err }, 'InviteResendSweep: failed');
+  }
 }
 
 // ============================================================
@@ -531,7 +651,7 @@ export function registerReferralCrons(): void {
   cron.schedule('0 3 * * *', () => void runClawbackSweep(), { timezone: 'Asia/Kolkata' });
 
   // InviteResendSweep: daily 09:00 IST
-  cron.schedule('0 9 * * *', () => runInviteResendSweep(), { timezone: 'Asia/Kolkata' });
+  cron.schedule('0 9 * * *', () => void runInviteResendSweep(), { timezone: 'Asia/Kolkata' });
 
   // RevenueShareSweep: monthly 1st 01:00 IST
   cron.schedule('0 1 1 * *', () => void runRevenueShareSweep(), { timezone: 'Asia/Kolkata' });
