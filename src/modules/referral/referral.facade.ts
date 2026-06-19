@@ -5,6 +5,7 @@
  */
 import { Logger } from 'pino';
 import { IReferralRepository } from './database/referral.repository.port';
+import { IDashboardCachePort } from './ports/dashboard-cache.port';
 import {
   ReferralVendorStatus,
   VendorRewardType,
@@ -16,6 +17,7 @@ import {
 export class ReferralFacade {
   constructor(
     private readonly repository: IReferralRepository,
+    private readonly dashboardCache: IDashboardCachePort<unknown>,
     private readonly logger: Logger
   ) {}
 
@@ -101,6 +103,9 @@ export class ReferralFacade {
           tx,
         });
       });
+
+      // Signup bonus earned for the referrer — invalidate their dashboard cache.
+      await this.dashboardCache.invalidate(referralRow.referrerVendorId);
 
       this.logger.info(
         {

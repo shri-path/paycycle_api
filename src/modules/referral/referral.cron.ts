@@ -7,6 +7,7 @@ import { logger } from '@/infrastructure/logger/logger';
 import { ReferralRepository } from './database/referral.repository';
 import { CustomerCountAdapter } from './database/customer-count.adapter';
 import { SubscriptionInvoiceAdapter } from './database/subscription-invoice.adapter';
+import { dashboardCache } from './database/dashboard-cache.instance';
 import {
   ReferralVendorStatus,
   ReferralRewardKind,
@@ -108,6 +109,7 @@ async function runMilestoneSweep(): Promise<void> {
               tx,
             });
           });
+          await dashboardCache.invalidate(row.referrerVendorId);
           milestone10++;
         } catch (err) {
           log.warn({ referralId: row.id.toString(), err }, 'Failed to award milestone 10');
@@ -131,6 +133,7 @@ async function runMilestoneSweep(): Promise<void> {
               tx,
             });
           });
+          await dashboardCache.invalidate(row.referrerVendorId);
           milestone50++;
         } catch (err) {
           log.warn({ referralId: row.id.toString(), err }, 'Failed to award milestone 50');
@@ -209,6 +212,8 @@ async function runClawbackSweep(): Promise<void> {
             tx
           );
         });
+        // Clawback changed the referrer's balance/earnings — drop their cache.
+        await dashboardCache.invalidate(row.referrerVendorId);
         clawedBack++;
       } catch (err) {
         log.warn({ referralId: row.id.toString(), err }, 'Failed to clawback referral');
@@ -266,6 +271,7 @@ async function runRevenueShareSweep(): Promise<void> {
             tx,
           });
         });
+        await dashboardCache.invalidate(row.referrerVendorId);
         shared++;
       } catch (err) {
         log.warn({ referralId: row.id.toString(), err }, 'Failed to apply revenue share');

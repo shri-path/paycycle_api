@@ -66,6 +66,21 @@ export interface CreditTransactionRow {
 }
 
 // ============================================================
+// Dashboard earned-breakdown aggregate
+// ============================================================
+
+/**
+ * Per-referral earned breakdown, summed by reward kind, from EARNED
+ * credit_transactions. All amounts default to 0 when a kind has no rows.
+ */
+export interface ReferralEarnedBreakdown {
+  signup: number;
+  milestone10: number;
+  milestone50: number;
+  revenueShare: number;
+}
+
+// ============================================================
 // Leaderboard rows
 // ============================================================
 
@@ -207,6 +222,15 @@ export interface IReferralRepository {
     referralId: bigint
   ): Promise<CreditTransactionRow[]>;
   totalEarnedForReferral(vendorId: bigint, referralId: bigint): Promise<number>;
+
+  /**
+   * Earned breakdown for ALL of a vendor's referrals in a SINGLE groupBy query.
+   * Groups EARNED credit_transactions by (sourceId, rewardKind) scoped to vendorId.
+   * Returns a Map keyed by referralId (sourceId) → per-kind sums. Referrals with
+   * no earned transactions are simply absent from the map (caller defaults to 0).
+   * Eliminates the dashboard N+1 over the ledger.
+   */
+  earnedBreakdownByReferral(vendorId: bigint): Promise<Map<bigint, ReferralEarnedBreakdown>>;
 
   // CustomerReferral
   insertCustomerReferral(

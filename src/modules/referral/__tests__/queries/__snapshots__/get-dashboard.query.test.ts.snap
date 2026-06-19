@@ -1,0 +1,64 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`GetDashboardQuery preserves the dashboard response contract (golden snapshot) 1`] = `
+{
+  "availableBalance": 1500,
+  "customerGrowthFromReferrals": {
+    "additionalMonthlyRevenue": 0,
+    "newCustomersThisMonth": 2,
+    "topReferrer": {
+      "customerName": "Top",
+      "referralCount": 3,
+    },
+    "totalFromReferrals": 5,
+  },
+  "referralCode": "EXISTING",
+  "totalEarnings": {
+    "credits": 1500,
+    "revenueShare": 120,
+    "total": 1620,
+  },
+  "vendorReferrals": [
+    {
+      "customerCount": 4,
+      "earned": {
+        "milestone10": 1000,
+        "milestone50": 0,
+        "revenueShare": 120,
+        "signup": 500,
+        "total": 1620,
+      },
+      "id": "1",
+      "nextMilestone": {
+        "progress": 4,
+        "reward": 1000,
+        "target": 10,
+        "type": "10_customers",
+      },
+      "referredDate": "2026-01-01T00:00:00.000Z",
+      "referredVendorName": "Referee 1",
+      "status": "SIGNED_UP",
+    },
+    {
+      "customerCount": 12,
+      "earned": {
+        "milestone10": 0,
+        "milestone50": 0,
+        "revenueShare": 0,
+        "signup": 0,
+        "total": 0,
+      },
+      "id": "2",
+      "nextMilestone": {
+        "progress": 12,
+        "reward": 5000,
+        "target": 50,
+        "type": "50_customers",
+      },
+      "referredDate": "2026-01-01T00:00:00.000Z",
+      "referredVendorName": "Referee 2",
+      "status": "SIGNED_UP",
+    },
+  ],
+}
+`;

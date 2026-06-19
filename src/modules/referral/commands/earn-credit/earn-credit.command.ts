@@ -4,6 +4,7 @@
  */
 import { Logger } from 'pino';
 import { IReferralRepository } from '../../database/referral.repository.port';
+import { IDashboardCachePort } from '../../ports/dashboard-cache.port';
 import { CreditSourceType, ReferralRewardKind } from '../../domain/vendor-referral.types';
 import { CreditTransactionRow } from '../../database/referral.repository.port';
 
@@ -19,6 +20,7 @@ export interface EarnCreditInput {
 export class EarnCreditCommand {
   constructor(
     private readonly repository: IReferralRepository,
+    private readonly dashboardCache: IDashboardCachePort<unknown>,
     private readonly logger: Logger
   ) {}
 
@@ -28,7 +30,7 @@ export class EarnCreditCommand {
       'EarnCreditCommand: earning credit'
     );
 
-    return this.repository.transaction(async (tx) => {
+    const txn = await this.repository.transaction(async (tx) => {
       return this.repository.earnCredit({
         vendorId: input.vendorId,
         amount: input.amount,
@@ -39,5 +41,10 @@ export class EarnCreditCommand {
         tx,
       });
     });
+
+    // A reward was earned — dashboard earnings/balance changed for this vendor.
+    await this.dashboardCache.invalidate(input.vendorId);
+
+    return txn;
   }
 }

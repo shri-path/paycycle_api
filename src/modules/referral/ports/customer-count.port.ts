@@ -12,4 +12,12 @@ export interface ICustomerCountPort {
    * Count customers added within the last N days for qualification check.
    */
   customersAddedWithinDays(vendorId: bigint, days: number): Promise<number>;
+
+  /**
+   * Batched active-customer counts for many vendors in a SINGLE query.
+   * Returns a Map keyed by vendorId; vendors with no active customers are
+   * present with a value of 0. Used by the dashboard to avoid an N+1 of
+   * per-referral activeCustomerCount calls.
+   */
+  activeCustomerCountByVendor(vendorIds: bigint[]): Promise<Map<bigint, number>>;
 }
