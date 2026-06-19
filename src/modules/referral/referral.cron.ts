@@ -2,8 +2,11 @@
  * Referral cron jobs — gated behind ENABLE_CRON=true.
  * Timezone: Asia/Kolkata
  */
+import crypto from 'crypto';
 import cron from 'node-cron';
 import { logger } from '@/infrastructure/logger/logger';
+import { AuditLogger } from '@/common/audit/audit-logger';
+import { AuditAction } from '@/common/audit/audit-action.enum';
 import { ReferralRepository } from './database/referral.repository';
 import { CustomerCountAdapter } from './database/customer-count.adapter';
 import { SubscriptionInvoiceAdapter } from './database/subscription-invoice.adapter';
@@ -22,6 +25,37 @@ import { VendorReferralRow } from './database/referral.repository.port';
 const repository = new ReferralRepository();
 const customerCountAdapter = new CustomerCountAdapter();
 const subscriptionInvoiceAdapter = new SubscriptionInvoiceAdapter();
+const auditLogger = new AuditLogger(logger);
+
+/**
+ * Emit a referral reward-earned audit entry from a cron path (US-15.2).
+ * Actor is `system` (no request user). Best-effort: AuditLogger swallows its
+ * own failures so a failed audit never affects the already-committed ledger row.
+ */
+async function auditRewardEarned(params: {
+  referrerVendorId: bigint;
+  referralId: bigint;
+  refereeVendorId: bigint;
+  amount: number;
+  rewardKind: ReferralRewardKind;
+  correlationId: string;
+}): Promise<void> {
+  await auditLogger.log({
+    vendorId: params.referrerVendorId,
+    performedByUserId: null,
+    performedByRole: 'system',
+    action: AuditAction.REFERRAL_REWARD_EARNED,
+    entityType: 'vendor_referral',
+    entityId: params.referralId,
+    metadata: {
+      amount: params.amount,
+      rewardKind: params.rewardKind,
+      refereeVendorId: params.refereeVendorId.toString(),
+      correlationId: params.correlationId,
+    },
+    correlationId: params.correlationId,
+  });
+}
 
 // ============================================================
 // Helpers
@@ -57,7 +91,8 @@ function rowToEntity(row: VendorReferralRow): VendorReferral {
 // ============================================================
 
 async function runMilestoneSweep(): Promise<void> {
-  const log = logger.child({ cron: 'MilestoneSweep' });
+  const runCorrelationId = crypto.randomUUID();
+  const log = logger.child({ cron: 'MilestoneSweep', correlationId: runCorrelationId });
   log.info('MilestoneSweep: starting');
   try {
     const referrals = await repository.findReferralsForMilestoneSweep();
@@ -110,6 +145,14 @@ async function runMilestoneSweep(): Promise<void> {
             });
           });
           await dashboardCache.invalidate(row.referrerVendorId);
+          await auditRewardEarned({
+            referrerVendorId: row.referrerVendorId,
+            referralId: row.id,
+            refereeVendorId: refereeId,
+            amount: REWARD_AMOUNTS.MILESTONE_10,
+            rewardKind: ReferralRewardKind.MILESTONE_10,
+            correlationId: runCorrelationId,
+          });
           milestone10++;
         } catch (err) {
           log.warn({ referralId: row.id.toString(), err }, 'Failed to award milestone 10');
@@ -134,6 +177,14 @@ async function runMilestoneSweep(): Promise<void> {
             });
           });
           await dashboardCache.invalidate(row.referrerVendorId);
+          await auditRewardEarned({
+            referrerVendorId: row.referrerVendorId,
+            referralId: row.id,
+            refereeVendorId: refereeId,
+            amount: REWARD_AMOUNTS.MILESTONE_50,
+            rewardKind: ReferralRewardKind.MILESTONE_50,
+            correlationId: runCorrelationId,
+          });
           milestone50++;
         } catch (err) {
           log.warn({ referralId: row.id.toString(), err }, 'Failed to award milestone 50');
@@ -155,7 +206,8 @@ async function runMilestoneSweep(): Promise<void> {
 // ============================================================
 
 async function runClawbackSweep(): Promise<void> {
-  const log = logger.child({ cron: 'ClawbackSweep' });
+  const runCorrelationId = crypto.randomUUID();
+  const log = logger.child({ cron: 'ClawbackSweep', correlationId: runCorrelationId });
   log.info('ClawbackSweep: starting');
   try {
     const candidates = await repository.findReferralsForClawbackSweep();
@@ -214,6 +266,27 @@ async function runClawbackSweep(): Promise<void> {
         });
         // Clawback changed the referrer's balance/earnings — drop their cache.
         await dashboardCache.invalidate(row.referrerVendorId);
+
+        // Audit the clawback. Records the ACTUAL reversed amount (clamped to what
+        // was earned — see actualEarned above), not the nominal earned sum. When
+        // nothing was earned (actualEarned === 0) no ledger row was written, but we
+        // still audit the referral being marked clawed-back for traceability.
+        await auditLogger.log({
+          vendorId: row.referrerVendorId,
+          performedByUserId: null,
+          performedByRole: 'system',
+          action: AuditAction.REFERRAL_CREDIT_CLAWED_BACK,
+          entityType: 'vendor_referral',
+          entityId: row.id,
+          metadata: {
+            amount: actualEarned,
+            refereeVendorId: refereeId.toString(),
+            reason: 'churn',
+            clawbackWindowDays: REWARD_AMOUNTS.CLAWBACK_DAYS,
+            correlationId: runCorrelationId,
+          },
+          correlationId: runCorrelationId,
+        });
         clawedBack++;
       } catch (err) {
         log.warn({ referralId: row.id.toString(), err }, 'Failed to clawback referral');
@@ -231,7 +304,8 @@ async function runClawbackSweep(): Promise<void> {
 // ============================================================
 
 async function runRevenueShareSweep(): Promise<void> {
-  const log = logger.child({ cron: 'RevenueShareSweep' });
+  const runCorrelationId = crypto.randomUUID();
+  const log = logger.child({ cron: 'RevenueShareSweep', correlationId: runCorrelationId });
   log.info('RevenueShareSweep: starting');
   try {
     const now = new Date();
@@ -272,6 +346,14 @@ async function runRevenueShareSweep(): Promise<void> {
           });
         });
         await dashboardCache.invalidate(row.referrerVendorId);
+        await auditRewardEarned({
+          referrerVendorId: row.referrerVendorId,
+          referralId: row.id,
+          refereeVendorId: refereeId,
+          amount: shareAmount,
+          rewardKind: ReferralRewardKind.REVENUE_SHARE,
+          correlationId: runCorrelationId,
+        });
         shared++;
       } catch (err) {
         log.warn({ referralId: row.id.toString(), err }, 'Failed to apply revenue share');

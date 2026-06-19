@@ -6,10 +6,25 @@ import { CreateVendorReferralCommand } from '../../commands/create-vendor-referr
 import { IReferralRepository } from '../../database/referral.repository.port';
 import { REWARD_AMOUNTS, ReferralVendorStatus } from '../../domain/vendor-referral.types';
 import { ForbiddenError, TooManyRequestsError, ConflictError } from '@/common/errors/app-error';
+import { AuditPort, AuditLogInput } from '@/common/audit/audit.port';
+import { AuditAction } from '@/common/audit/audit-action.enum';
 import pino from 'pino';
 
 const logger = pino({ level: 'silent' });
 const referrerVendorId = BigInt(10);
+
+function makeAudit(): jest.Mocked<AuditPort> {
+  return { log: jest.fn().mockResolvedValue(undefined) };
+}
+
+/** First audit entry the port received, with metadata narrowed for assertions. */
+function firstAuditEntry(audit: jest.Mocked<AuditPort>): AuditLogInput & {
+  metadata: Record<string, unknown>;
+} {
+  const entry = audit.log.mock.calls[0]?.[0];
+  if (!entry) throw new Error('expected audit.log to have been called');
+  return { ...entry, metadata: entry.metadata ?? {} };
+}
 
 function makeReferralRow(overrides: Record<string, unknown> = {}) {
   return {
@@ -94,7 +109,7 @@ describe('CreateVendorReferralCommand', () => {
       const repo = makeRepo({
         countTodayReferrals: jest.fn().mockResolvedValue(REWARD_AMOUNTS.REFERRAL_DAILY_LIMIT),
       });
-      const cmd = new CreateVendorReferralCommand(repo, logger);
+      const cmd = new CreateVendorReferralCommand(repo, makeAudit(), logger);
 
       await expect(
         cmd.execute({ referrerVendorId, vendorName: 'Test', refereePhone: '+919999999999' })
@@ -105,7 +120,7 @@ describe('CreateVendorReferralCommand', () => {
       const repo = makeRepo({
         countTodayReferrals: jest.fn().mockResolvedValue(10),
       });
-      const cmd = new CreateVendorReferralCommand(repo, logger);
+      const cmd = new CreateVendorReferralCommand(repo, makeAudit(), logger);
 
       await expect(
         cmd.execute({ referrerVendorId, vendorName: 'Test', refereePhone: '+919999999999' })
@@ -118,7 +133,7 @@ describe('CreateVendorReferralCommand', () => {
       const repo = makeRepo({
         findVendorReferralByPhone: jest.fn().mockResolvedValue(makeReferralRow()),
       });
-      const cmd = new CreateVendorReferralCommand(repo, logger);
+      const cmd = new CreateVendorReferralCommand(repo, makeAudit(), logger);
 
       await expect(
         cmd.execute({ referrerVendorId, vendorName: 'Test', refereePhone: '+919999999999' })
@@ -132,7 +147,7 @@ describe('CreateVendorReferralCommand', () => {
       const repo = makeRepo({
         getVendorPhone: jest.fn().mockResolvedValue('+919999999999'),
       });
-      const cmd = new CreateVendorReferralCommand(repo, logger);
+      const cmd = new CreateVendorReferralCommand(repo, makeAudit(), logger);
 
       await expect(
         cmd.execute({ referrerVendorId, vendorName: 'Test', refereePhone: '+919999999999' })
@@ -143,7 +158,7 @@ describe('CreateVendorReferralCommand', () => {
   describe('successful creation', () => {
     it('should return referralId and referralCode', async () => {
       const repo = makeRepo();
-      const cmd = new CreateVendorReferralCommand(repo, logger);
+      const cmd = new CreateVendorReferralCommand(repo, makeAudit(), logger);
 
       const result = await cmd.execute({
         referrerVendorId,
@@ -158,7 +173,7 @@ describe('CreateVendorReferralCommand', () => {
 
     it('should include a message with the referral code and link', async () => {
       const repo = makeRepo();
-      const cmd = new CreateVendorReferralCommand(repo, logger);
+      const cmd = new CreateVendorReferralCommand(repo, makeAudit(), logger);
 
       const result = await cmd.execute({
         referrerVendorId,
@@ -172,7 +187,7 @@ describe('CreateVendorReferralCommand', () => {
 
     it('should call insertVendorReferral', async () => {
       const repo = makeRepo();
-      const cmd = new CreateVendorReferralCommand(repo, logger);
+      const cmd = new CreateVendorReferralCommand(repo, makeAudit(), logger);
 
       await cmd.execute({
         referrerVendorId,
@@ -190,7 +205,7 @@ describe('CreateVendorReferralCommand', () => {
         isReferralCodeUnique: jest.fn().mockResolvedValue(true),
         setVendorReferralCode: jest.fn().mockResolvedValue(undefined),
       });
-      const cmd = new CreateVendorReferralCommand(repo, logger);
+      const cmd = new CreateVendorReferralCommand(repo, makeAudit(), logger);
 
       await cmd.execute({
         referrerVendorId,
@@ -200,6 +215,71 @@ describe('CreateVendorReferralCommand', () => {
 
       // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(repo.setVendorReferralCode).toHaveBeenCalled();
+    });
+  });
+
+  describe('audit trail (US-15.2)', () => {
+    it('should emit a REFERRAL_CREATED audit entry with masked referee phone', async () => {
+      const repo = makeRepo();
+      const audit = makeAudit();
+      const cmd = new CreateVendorReferralCommand(repo, audit, logger);
+
+      await cmd.execute({
+        referrerVendorId,
+        vendorName: 'Milk Depot',
+        refereePhone: '+919876543210',
+        actorUserId: BigInt(77),
+        actorRole: 'vendor_owner',
+      });
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(audit.log).toHaveBeenCalledTimes(1);
+      const entry = firstAuditEntry(audit);
+      expect(entry.action).toBe(AuditAction.REFERRAL_CREATED);
+      expect(entry.vendorId).toBe(referrerVendorId);
+      expect(entry.performedByUserId).toBe(BigInt(77));
+      expect(entry.performedByRole).toBe('vendor_owner');
+      expect(entry.entityType).toBe('vendor_referral');
+      expect(entry.entityId).toBe(BigInt(1));
+      // Phone must be masked — full number never present.
+      expect(entry.metadata.refereePhoneMasked).not.toContain('987654');
+      expect(entry.metadata.refereePhoneMasked).toMatch(/3210$/);
+      expect(entry.metadata.referralCode).toBe('MILK1234');
+      expect(entry.correlationId).toBeDefined();
+    });
+
+    it('should NOT emit an audit entry when creation is blocked (rate limit)', async () => {
+      const repo = makeRepo({
+        countTodayReferrals: jest.fn().mockResolvedValue(REWARD_AMOUNTS.REFERRAL_DAILY_LIMIT),
+      });
+      const audit = makeAudit();
+      const cmd = new CreateVendorReferralCommand(repo, audit, logger);
+
+      await expect(
+        cmd.execute({ referrerVendorId, vendorName: 'Test', refereePhone: '+919999999999' })
+      ).rejects.toThrow(TooManyRequestsError);
+
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(audit.log).not.toHaveBeenCalled();
+    });
+
+    it('should still return the created referral when the audit port swallows a failure', async () => {
+      // The shared AuditLogger never throws into the caller (AuditPort contract):
+      // it logs+swallows internally and resolves. So a failed audit write must not
+      // affect the already-persisted referral nor the command's return value.
+      const repo = makeRepo();
+      const audit = makeAudit(); // log resolves (mirrors AuditLogger swallow behaviour)
+      const cmd = new CreateVendorReferralCommand(repo, audit, logger);
+
+      const result = await cmd.execute({
+        referrerVendorId,
+        vendorName: 'Milk Depot',
+        refereePhone: '+919876543210',
+      });
+
+      expect(result.referralId).toBe('1');
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      expect(repo.insertVendorReferral).toHaveBeenCalled();
     });
   });
 });

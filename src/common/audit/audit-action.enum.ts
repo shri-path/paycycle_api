@@ -36,4 +36,10 @@ export enum AuditAction {
 
   // Placeholders for later user stories (referenced for forward-compat)
   PAYMENT_MARKED = 'payment_marked',
+
+  // Referral financial operations (US-15.2)
+  REFERRAL_CREATED = 'referral_created',
+  REFERRAL_CREDIT_REDEEMED = 'referral_credit_redeemed',
+  REFERRAL_CREDIT_CLAWED_BACK = 'referral_credit_clawed_back',
+  REFERRAL_REWARD_EARNED = 'referral_reward_earned',
 }

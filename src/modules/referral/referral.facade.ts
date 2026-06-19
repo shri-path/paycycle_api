@@ -3,7 +3,10 @@
  * Auth/signup calls processVendorSignup when a new vendor signs up with a referral code.
  * Customer module calls recordCustomerReferral.
  */
+import crypto from 'crypto';
 import { Logger } from 'pino';
+import { AuditPort } from '@/common/audit/audit.port';
+import { AuditAction } from '@/common/audit/audit-action.enum';
 import { IReferralRepository } from './database/referral.repository.port';
 import { IDashboardCachePort } from './ports/dashboard-cache.port';
 import {
@@ -18,6 +21,7 @@ export class ReferralFacade {
   constructor(
     private readonly repository: IReferralRepository,
     private readonly dashboardCache: IDashboardCachePort<unknown>,
+    private readonly auditLogger: AuditPort,
     private readonly logger: Logger
   ) {}
 
@@ -27,8 +31,9 @@ export class ReferralFacade {
    * Swallows errors (signup must not fail due to referral issues).
    */
   async processVendorSignup(refereeVendorId: bigint, referralCode: string): Promise<void> {
+    const correlationId = crypto.randomUUID();
     this.logger.info(
-      { refereeVendorId: refereeVendorId.toString(), referralCode },
+      { refereeVendorId: refereeVendorId.toString(), referralCode, correlationId },
       'ReferralFacade.processVendorSignup: attributing signup'
     );
 
@@ -106,6 +111,24 @@ export class ReferralFacade {
 
       // Signup bonus earned for the referrer — invalidate their dashboard cache.
       await this.dashboardCache.invalidate(referralRow.referrerVendorId);
+
+      // Audit the reward-earned (system actor — originates from the signup flow,
+      // not an authenticated referrer action). Best-effort, post-commit.
+      await this.auditLogger.log({
+        vendorId: referralRow.referrerVendorId,
+        performedByUserId: null,
+        performedByRole: 'system',
+        action: AuditAction.REFERRAL_REWARD_EARNED,
+        entityType: 'vendor_referral',
+        entityId: referralRow.id,
+        metadata: {
+          amount: REWARD_AMOUNTS.SIGNUP_BONUS,
+          rewardKind: ReferralRewardKind.SIGNUP_BONUS,
+          refereeVendorId: refereeVendorId.toString(),
+          correlationId,
+        },
+        correlationId,
+      });
 
       this.logger.info(
         {
