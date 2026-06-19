@@ -2,8 +2,11 @@
  * RedeemCreditCommand — redeem vendor credits for subscription, upgrade.
  * USER DECISION: 'withdraw' is DISABLED in v1 — returns 400 WITHDRAWAL_NOT_AVAILABLE.
  */
+import crypto from 'crypto';
 import { Logger } from 'pino';
 import { BadRequestError, ConflictError } from '@/common/errors/app-error';
+import { AuditPort } from '@/common/audit/audit.port';
+import { AuditAction } from '@/common/audit/audit-action.enum';
 import { IReferralRepository } from '../../database/referral.repository.port';
 import { ISubscriptionCreditPort } from '../../ports/subscription-credit.port';
 import { IDashboardCachePort } from '../../ports/dashboard-cache.port';
@@ -15,6 +18,10 @@ export interface RedeemCreditInput {
   vendorId: bigint;
   redemptionType: RedemptionType;
   amount: number;
+  /** Acting owner's user id (for the audit actor). Null falls back to system. */
+  actorUserId?: bigint | null;
+  /** Acting owner's role slug (for the audit actor). */
+  actorRole?: string;
 }
 
 export interface RedeemCreditResult {
@@ -30,10 +37,12 @@ export class RedeemCreditCommand {
     private readonly repository: IReferralRepository,
     private readonly subscriptionCreditPort: ISubscriptionCreditPort,
     private readonly dashboardCache: IDashboardCachePort<unknown>,
+    private readonly auditLogger: AuditPort,
     private readonly logger: Logger
   ) {}
 
   async execute(input: RedeemCreditInput): Promise<RedeemCreditResult> {
+    const correlationId = crypto.randomUUID();
     this.logger.info(
       {
         vendorId: input.vendorId.toString(),
@@ -62,6 +71,7 @@ export class RedeemCreditCommand {
     // Atomic balance-check + deduction in a single transaction to prevent TOCTOU race.
     // The balance is re-read inside the transaction before decrementing.
     let newBalance = 0;
+    let transactionId: bigint | null = null;
     await this.repository.transaction(async (tx) => {
       const creditRow = await this.repository.getVendorCreditBalance(input.vendorId, tx);
       const available = creditRow?.availableCredits ?? 0;
@@ -87,11 +97,33 @@ export class RedeemCreditCommand {
         tx,
       });
       newBalance = txnRow.balanceAfter;
+      transactionId = txnRow.id;
     });
 
     // Redemption changed the available balance — drop the cached dashboard so the
     // next read reflects the new balance immediately (invalidation after commit).
     await this.dashboardCache.invalidate(input.vendorId);
+
+    // Audit the (now-committed) credit-decreasing operation. Best-effort: AuditLogger
+    // swallows+logs its own failures, so a failed audit write never rolls back the
+    // ledger transaction above nor fails the caller's redemption.
+    const performedByRole = input.actorRole ?? (input.actorUserId ? null : 'system');
+    await this.auditLogger.log({
+      vendorId: input.vendorId,
+      performedByUserId: input.actorUserId ?? null,
+      ...(performedByRole !== null ? { performedByRole } : {}),
+      action: AuditAction.REFERRAL_CREDIT_REDEEMED,
+      entityType: 'vendor_credit',
+      entityId: input.vendorId,
+      metadata: {
+        amount: input.amount,
+        redemptionType: input.redemptionType,
+        balanceAfter: newBalance,
+        transactionId: transactionId != null ? (transactionId as bigint).toString() : null,
+        correlationId,
+      },
+      correlationId,
+    });
 
     // Apply to subscription (stub in v1)
     if (input.redemptionType === 'subscription') {

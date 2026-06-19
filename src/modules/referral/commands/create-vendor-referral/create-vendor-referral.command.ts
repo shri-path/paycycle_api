@@ -3,8 +3,12 @@
  * Rate-limited: max 10/day per vendor.
  * Lazily generates referral_code if not set on the vendor.
  */
+import crypto from 'crypto';
 import { Logger } from 'pino';
 import { ConflictError, ForbiddenError, TooManyRequestsError } from '@/common/errors/app-error';
+import { AuditPort } from '@/common/audit/audit.port';
+import { AuditAction } from '@/common/audit/audit-action.enum';
+import { maskPhone } from '@/common/utils/mask-phone';
 import { IReferralRepository } from '../../database/referral.repository.port';
 import { VendorReferral } from '../../domain/vendor-referral.entity';
 import { ReferralCode } from '../../domain/value-objects/referral-code.vo';
@@ -15,6 +19,10 @@ export interface CreateVendorReferralInput {
   vendorName: string;
   refereePhone: string;
   refereeName?: string;
+  /** Acting owner's user id (for the audit actor). */
+  actorUserId?: bigint | null;
+  /** Acting owner's role slug (for the audit actor). */
+  actorRole?: string;
 }
 
 export interface CreateVendorReferralResult {
@@ -29,10 +37,12 @@ export interface CreateVendorReferralResult {
 export class CreateVendorReferralCommand {
   constructor(
     private readonly repository: IReferralRepository,
+    private readonly auditLogger: AuditPort,
     private readonly logger: Logger
   ) {}
 
   async execute(input: CreateVendorReferralInput): Promise<CreateVendorReferralResult> {
+    const correlationId = crypto.randomUUID();
     this.logger.info(
       { vendorId: input.referrerVendorId.toString() },
       'CreateVendorReferralCommand: creating referral'
@@ -85,6 +95,24 @@ export class CreateVendorReferralCommand {
     });
 
     const row = await this.repository.insertVendorReferral(referral);
+
+    // Audit the referral creation. Referee phone is masked per US-007 PII
+    // conventions. Best-effort, post-insert — never blocks the response.
+    const performedByRole = input.actorRole ?? (input.actorUserId ? null : 'system');
+    await this.auditLogger.log({
+      vendorId: input.referrerVendorId,
+      performedByUserId: input.actorUserId ?? null,
+      ...(performedByRole !== null ? { performedByRole } : {}),
+      action: AuditAction.REFERRAL_CREATED,
+      entityType: 'vendor_referral',
+      entityId: row.id,
+      metadata: {
+        refereePhoneMasked: maskPhone(input.refereePhone),
+        referralCode,
+        correlationId,
+      },
+      correlationId,
+    });
 
     const referralLink = `https://paycycle.app/join?ref=${referralCode}`;
     const message = this.buildInviteMessage(

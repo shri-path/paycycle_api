@@ -7,6 +7,7 @@ import rateLimit from 'express-rate-limit';
 import { logger } from '@/infrastructure/logger/logger';
 import { validate } from '@/infrastructure/middlewares/validate';
 import { TooManyRequestsError } from '@/common/errors/app-error';
+import { AuditLogger } from '@/common/audit/audit-logger';
 import { authenticateToken } from '@/modules/auth/auth.middleware';
 import { identifyUserRole } from '@/infrastructure/middlewares/rbac/role-context';
 import { requireOwnerRole } from '@/infrastructure/middlewares/rbac/require-owner';
@@ -57,13 +58,15 @@ const repository = new ReferralRepository();
 const customerCountAdapter = new CustomerCountAdapter();
 const subscriptionCreditAdapter = new StubSubscriptionCreditAdapter();
 const inviteMessageAdapter = new StubInviteMessageAdapter();
+const auditLogger = new AuditLogger(logger);
 
-const createReferralCmd = new CreateVendorReferralCommand(repository, logger);
+const createReferralCmd = new CreateVendorReferralCommand(repository, auditLogger, logger);
 export const earnCreditCmd = new EarnCreditCommand(repository, dashboardCache, logger);
 const redeemCreditCmd = new RedeemCreditCommand(
   repository,
   subscriptionCreditAdapter,
   dashboardCache,
+  auditLogger,
   logger
 );
 const bulkInviteCmd = new BulkInviteCommand(repository, inviteMessageAdapter, logger);
@@ -95,7 +98,7 @@ const controller = new ReferralController(
 );
 
 // Export facade for other modules (auth/signup flow)
-export const referralFacade = new ReferralFacade(repository, dashboardCache, logger);
+export const referralFacade = new ReferralFacade(repository, dashboardCache, auditLogger, logger);
 
 // === Rate Limiters ===
 const referralCreateLimiter = rateLimit({

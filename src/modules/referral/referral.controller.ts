@@ -83,6 +83,8 @@ export class ReferralController {
         referrerVendorId: vendorId,
         vendorName: body.vendorName ?? 'Vendor',
         refereePhone: body.phoneNumber,
+        actorUserId: req.roleContext!.userId,
+        actorRole: req.roleContext!.roleName,
         ...(body.vendorName !== undefined ? { refereeName: body.vendorName } : {}),
       });
 
@@ -386,7 +388,13 @@ export class ReferralController {
         amount: number;
       };
 
-      const result = await this.redeemCreditCmd.execute({ vendorId, redemptionType, amount });
+      const result = await this.redeemCreditCmd.execute({
+        vendorId,
+        redemptionType,
+        amount,
+        actorUserId: req.roleContext!.userId,
+        actorRole: req.roleContext!.roleName,
+      });
       sendSuccess(res, result);
     } catch (err) {
       next(err);
