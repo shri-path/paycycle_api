@@ -816,6 +816,27 @@ export class ReferralRepository implements IReferralRepository {
     return rows.map((r) => this.toInviteRow(r));
   }
 
+  async findInvitesDueForResendBatch(limit: number): Promise<CustomerInviteRow[]> {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    // Prisma cannot compare two columns (attemptCount < maxAttempts) in a `where`,
+    // so we push down every DB-expressible predicate, order oldest-first, cap at
+    // `limit`, then drop any rows already at/over their per-invite cap in memory.
+    // Rows at max are excluded here and marked FAILED by the sweep, so they do not
+    // accumulate across runs.
+    const rows = await prisma.referralCustomerInvite.findMany({
+      where: {
+        autoResend: true,
+        status: { in: ['SENT', 'DELIVERED'] },
+        lastAttemptAt: { lte: sevenDaysAgo },
+        deletedAt: null,
+      },
+      orderBy: { lastAttemptAt: 'asc' },
+      take: limit,
+    });
+    return rows.filter((r) => r.attemptCount < r.maxAttempts).map((r) => this.toInviteRow(r));
+  }
+
   async updateInviteStatus(id: bigint, status: string, tx?: PrismaTransaction): Promise<void> {
     const db = tx ?? prisma;
     await db.referralCustomerInvite.update({

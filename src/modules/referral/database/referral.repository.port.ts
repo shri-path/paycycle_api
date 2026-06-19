@@ -274,6 +274,17 @@ export interface IReferralRepository {
     tx?: PrismaTransaction
   ): Promise<number>;
   findInvitesDueForResend(vendorId: bigint): Promise<CustomerInviteRow[]>;
+  /**
+   * Global, bounded sweep query for the InviteResendSweep cron (US-15.4).
+   * Returns invites across ALL vendors that are due for an auto-resend:
+   *   - status in (SENT, DELIVERED)  → excludes SIGNED_UP / FAILED
+   *   - autoResend = true
+   *   - lastAttemptAt <= now - 7 days
+   *   - attemptCount < maxAttempts   → anti-spam stop guard
+   *   - not soft-deleted
+   * Bounded by `limit` (oldest-first) so a large backlog is drained across runs.
+   */
+  findInvitesDueForResendBatch(limit: number): Promise<CustomerInviteRow[]>;
   findActiveInviteByPhone(vendorId: bigint, phone: string): Promise<CustomerInviteRow | null>;
   updateInviteStatus(id: bigint, status: string, tx?: PrismaTransaction): Promise<void>;
   incrementInviteAttempt(id: bigint, tx?: PrismaTransaction): Promise<void>;
