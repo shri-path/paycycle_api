@@ -8,6 +8,8 @@ import { IReferralRepository } from '../database/referral.repository.port';
 import { IDashboardCachePort } from '../ports/dashboard-cache.port';
 import { AuditPort, AuditLogInput } from '@/common/audit/audit.port';
 import { AuditAction } from '@/common/audit/audit-action.enum';
+import { ReferralEventDispatcher } from '../domain/events/referral-event-dispatcher';
+import { ReferralRewardEarnedEvent } from '../domain/events/vendor-referral.domain-events';
 import {
   ReferralVendorStatus,
   ReferralRewardKind,
@@ -16,6 +18,10 @@ import {
 import pino from 'pino';
 
 const logger = pino({ level: 'silent' });
+
+function makeEvents(): ReferralEventDispatcher {
+  return new ReferralEventDispatcher(logger);
+}
 const referrerVendorId = BigInt(10);
 const refereeVendorId = BigInt(20);
 const referralId = BigInt(5);
@@ -87,7 +93,7 @@ describe('ReferralFacade.processVendorSignup — audit (US-15.2)', () => {
   it('emits a REFERRAL_REWARD_EARNED audit entry with a system actor', async () => {
     const repo = makeRepo();
     const audit = makeAudit();
-    const facade = new ReferralFacade(repo, makeCache(), audit, logger);
+    const facade = new ReferralFacade(repo, makeCache(), audit, makeEvents(), logger);
 
     await facade.processVendorSignup(refereeVendorId, 'MILK1234');
 
@@ -108,7 +114,7 @@ describe('ReferralFacade.processVendorSignup — audit (US-15.2)', () => {
   it('does not emit an audit entry when no PENDING referral matches the code', async () => {
     const repo = makeRepo({ findVendorReferralByCode: jest.fn().mockResolvedValue(null) });
     const audit = makeAudit();
-    const facade = new ReferralFacade(repo, makeCache(), audit, logger);
+    const facade = new ReferralFacade(repo, makeCache(), audit, makeEvents(), logger);
 
     await facade.processVendorSignup(refereeVendorId, 'NOPE0000');
 
@@ -120,9 +126,48 @@ describe('ReferralFacade.processVendorSignup — audit (US-15.2)', () => {
     const repo = makeRepo();
     const audit = makeAudit();
     audit.log.mockRejectedValueOnce(new Error('audit db down'));
-    const facade = new ReferralFacade(repo, makeCache(), audit, logger);
+    const facade = new ReferralFacade(repo, makeCache(), audit, makeEvents(), logger);
 
     // processVendorSignup wraps everything in try/catch and swallows — must resolve.
+    await expect(facade.processVendorSignup(refereeVendorId, 'MILK1234')).resolves.toBeUndefined();
+  });
+});
+
+describe('ReferralFacade.processVendorSignup — referrer notification event (US-15.3)', () => {
+  it('publishes ReferralRewardEarned for the referrer on signup bonus', async () => {
+    const repo = makeRepo();
+    const events = makeEvents();
+    const publishSpy = jest.spyOn(events, 'publish');
+    const facade = new ReferralFacade(repo, makeCache(), makeAudit(), events, logger);
+
+    await facade.processVendorSignup(refereeVendorId, 'MILK1234');
+
+    expect(publishSpy).toHaveBeenCalledTimes(1);
+    const event = publishSpy.mock.calls[0]?.[0] as ReferralRewardEarnedEvent;
+    expect(event).toBeInstanceOf(ReferralRewardEarnedEvent);
+    expect(event.vendorId).toBe(referrerVendorId.toString());
+    expect(event.amount).toBe(REWARD_AMOUNTS.SIGNUP_BONUS);
+    expect(event.rewardKind).toBe(ReferralRewardKind.SIGNUP_BONUS);
+    expect(event.aggregateId).toBe(referralId.toString());
+  });
+
+  it('does not publish when no PENDING referral matches the code', async () => {
+    const repo = makeRepo({ findVendorReferralByCode: jest.fn().mockResolvedValue(null) });
+    const events = makeEvents();
+    const publishSpy = jest.spyOn(events, 'publish');
+    const facade = new ReferralFacade(repo, makeCache(), makeAudit(), events, logger);
+
+    await facade.processVendorSignup(refereeVendorId, 'NOPE0000');
+
+    expect(publishSpy).not.toHaveBeenCalled();
+  });
+
+  it('swallows a publish failure (signup never fails)', async () => {
+    const repo = makeRepo();
+    const events = makeEvents();
+    jest.spyOn(events, 'publish').mockRejectedValueOnce(new Error('dispatch boom'));
+    const facade = new ReferralFacade(repo, makeCache(), makeAudit(), events, logger);
+
     await expect(facade.processVendorSignup(refereeVendorId, 'MILK1234')).resolves.toBeUndefined();
   });
 });

@@ -10,6 +10,8 @@ import { AuditAction } from '@/common/audit/audit-action.enum';
 import { IReferralRepository } from '../../database/referral.repository.port';
 import { ISubscriptionCreditPort } from '../../ports/subscription-credit.port';
 import { IDashboardCachePort } from '../../ports/dashboard-cache.port';
+import { ReferralEventDispatcher } from '../../domain/events/referral-event-dispatcher';
+import { CreditRedeemedEvent } from '../../domain/events/vendor-referral.domain-events';
 import { CreditSourceType } from '../../domain/vendor-referral.types';
 
 export type RedemptionType = 'subscription' | 'upgrade' | 'withdraw';
@@ -38,6 +40,7 @@ export class RedeemCreditCommand {
     private readonly subscriptionCreditPort: ISubscriptionCreditPort,
     private readonly dashboardCache: IDashboardCachePort<unknown>,
     private readonly auditLogger: AuditPort,
+    private readonly events: ReferralEventDispatcher,
     private readonly logger: Logger
   ) {}
 
@@ -124,6 +127,19 @@ export class RedeemCreditCommand {
       },
       correlationId,
     });
+
+    // US-15.3: publish CreditRedeemed (post-commit, best-effort). The dispatcher
+    // swallows handler errors so event delivery never fails the redemption.
+    await this.events.publish(
+      new CreditRedeemedEvent({
+        aggregateId:
+          transactionId != null ? (transactionId as bigint).toString() : input.vendorId.toString(),
+        vendorId: input.vendorId.toString(),
+        amount: input.amount,
+        redemptionType: input.redemptionType,
+        metadata: { correlationId },
+      })
+    );
 
     // Apply to subscription (stub in v1)
     if (input.redemptionType === 'subscription') {

@@ -9,6 +9,8 @@ import { AuditPort } from '@/common/audit/audit.port';
 import { AuditAction } from '@/common/audit/audit-action.enum';
 import { IReferralRepository } from './database/referral.repository.port';
 import { IDashboardCachePort } from './ports/dashboard-cache.port';
+import { ReferralEventDispatcher } from './domain/events/referral-event-dispatcher';
+import { ReferralRewardEarnedEvent } from './domain/events/vendor-referral.domain-events';
 import {
   ReferralVendorStatus,
   VendorRewardType,
@@ -22,6 +24,7 @@ export class ReferralFacade {
     private readonly repository: IReferralRepository,
     private readonly dashboardCache: IDashboardCachePort<unknown>,
     private readonly auditLogger: AuditPort,
+    private readonly events: ReferralEventDispatcher,
     private readonly logger: Logger
   ) {}
 
@@ -129,6 +132,20 @@ export class ReferralFacade {
         },
         correlationId,
       });
+
+      // US-15.3: publish ReferralRewardEarned so the referrer is notified of the
+      // signup bonus. Published after the reward row is committed and only inside
+      // the first-wins guard above, so it is inherently idempotent. Best-effort —
+      // the dispatcher swallows handler errors (signup must never fail).
+      await this.events.publish(
+        new ReferralRewardEarnedEvent({
+          aggregateId: referralRow.id.toString(),
+          vendorId: referralRow.referrerVendorId.toString(),
+          amount: REWARD_AMOUNTS.SIGNUP_BONUS,
+          rewardKind: ReferralRewardKind.SIGNUP_BONUS,
+          metadata: { correlationId },
+        })
+      );
 
       this.logger.info(
         {

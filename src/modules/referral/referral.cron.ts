@@ -21,6 +21,12 @@ import {
 } from './domain/vendor-referral.types';
 import { VendorReferral } from './domain/vendor-referral.entity';
 import { VendorReferralRow } from './database/referral.repository.port';
+import { referralEvents } from './database/referral-events.instance';
+import {
+  ReferralRewardEarnedEvent,
+  ReferralRewardClawedBackEvent,
+  VendorReferralQualifiedEvent,
+} from './domain/events/vendor-referral.domain-events';
 
 const repository = new ReferralRepository();
 const customerCountAdapter = new CustomerCountAdapter();
@@ -55,6 +61,30 @@ async function auditRewardEarned(params: {
     },
     correlationId: params.correlationId,
   });
+}
+
+/**
+ * Publish ReferralRewardEarned from a cron reward path (US-15.3) so the referrer is
+ * notified. Published only after the reward row is committed and inside the existing
+ * dedup guards (milestone10At/50At, hasRevenueShareForMonth), so it is idempotent.
+ * Best-effort: the dispatcher swallows handler errors so it never affects the cron run.
+ */
+async function publishRewardEarned(params: {
+  referrerVendorId: bigint;
+  referralId: bigint;
+  amount: number;
+  rewardKind: ReferralRewardKind;
+  correlationId: string;
+}): Promise<void> {
+  await referralEvents.publish(
+    new ReferralRewardEarnedEvent({
+      aggregateId: params.referralId.toString(),
+      vendorId: params.referrerVendorId.toString(),
+      amount: params.amount,
+      rewardKind: params.rewardKind,
+      metadata: { correlationId: params.correlationId },
+    })
+  );
 }
 
 // ============================================================
@@ -121,6 +151,15 @@ async function runMilestoneSweep(): Promise<void> {
           await repository.transaction(async (tx) => {
             await repository.updateVendorReferral(referral, tx);
           });
+          // US-15.3: referral transitioned SIGNED_UP → QUALIFIED.
+          await referralEvents.publish(
+            new VendorReferralQualifiedEvent({
+              aggregateId: row.id.toString(),
+              referrerVendorId: row.referrerVendorId.toString(),
+              refereeVendorId: refereeId.toString(),
+              metadata: { correlationId: runCorrelationId },
+            })
+          );
           qualified++;
         } catch (err) {
           log.warn({ referralId: row.id.toString(), err }, 'Failed to qualify referral');
@@ -153,6 +192,13 @@ async function runMilestoneSweep(): Promise<void> {
             rewardKind: ReferralRewardKind.MILESTONE_10,
             correlationId: runCorrelationId,
           });
+          await publishRewardEarned({
+            referrerVendorId: row.referrerVendorId,
+            referralId: row.id,
+            amount: REWARD_AMOUNTS.MILESTONE_10,
+            rewardKind: ReferralRewardKind.MILESTONE_10,
+            correlationId: runCorrelationId,
+          });
           milestone10++;
         } catch (err) {
           log.warn({ referralId: row.id.toString(), err }, 'Failed to award milestone 10');
@@ -181,6 +227,13 @@ async function runMilestoneSweep(): Promise<void> {
             referrerVendorId: row.referrerVendorId,
             referralId: row.id,
             refereeVendorId: refereeId,
+            amount: REWARD_AMOUNTS.MILESTONE_50,
+            rewardKind: ReferralRewardKind.MILESTONE_50,
+            correlationId: runCorrelationId,
+          });
+          await publishRewardEarned({
+            referrerVendorId: row.referrerVendorId,
+            referralId: row.id,
             amount: REWARD_AMOUNTS.MILESTONE_50,
             rewardKind: ReferralRewardKind.MILESTONE_50,
             correlationId: runCorrelationId,
@@ -287,6 +340,17 @@ async function runClawbackSweep(): Promise<void> {
           },
           correlationId: runCorrelationId,
         });
+        // US-15.3: publish CreditClawedBack (post-commit, best-effort) carrying the
+        // ACTUAL reversed amount (clamped to what was earned, like the audit above).
+        await referralEvents.publish(
+          new ReferralRewardClawedBackEvent({
+            aggregateId: row.id.toString(),
+            vendorId: row.referrerVendorId.toString(),
+            referralId: row.id.toString(),
+            amount: actualEarned,
+            metadata: { correlationId: runCorrelationId },
+          })
+        );
         clawedBack++;
       } catch (err) {
         log.warn({ referralId: row.id.toString(), err }, 'Failed to clawback referral');
@@ -350,6 +414,13 @@ async function runRevenueShareSweep(): Promise<void> {
           referrerVendorId: row.referrerVendorId,
           referralId: row.id,
           refereeVendorId: refereeId,
+          amount: shareAmount,
+          rewardKind: ReferralRewardKind.REVENUE_SHARE,
+          correlationId: runCorrelationId,
+        });
+        await publishRewardEarned({
+          referrerVendorId: row.referrerVendorId,
+          referralId: row.id,
           amount: shareAmount,
           rewardKind: ReferralRewardKind.REVENUE_SHARE,
           correlationId: runCorrelationId,

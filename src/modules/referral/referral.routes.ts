@@ -18,6 +18,7 @@ import { CustomerCountAdapter } from './database/customer-count.adapter';
 import { StubSubscriptionCreditAdapter } from './database/subscription-credit.adapter';
 import { StubInviteMessageAdapter } from './database/invite-message.adapter';
 import { dashboardCache } from './database/dashboard-cache.instance';
+import { referralEvents } from './database/referral-events.instance';
 
 // Commands
 import { CreateVendorReferralCommand } from './commands/create-vendor-referral/create-vendor-referral.command';
@@ -67,6 +68,7 @@ const redeemCreditCmd = new RedeemCreditCommand(
   subscriptionCreditAdapter,
   dashboardCache,
   auditLogger,
+  referralEvents,
   logger
 );
 const bulkInviteCmd = new BulkInviteCommand(repository, inviteMessageAdapter, logger);
@@ -98,7 +100,13 @@ const controller = new ReferralController(
 );
 
 // Export facade for other modules (auth/signup flow)
-export const referralFacade = new ReferralFacade(repository, dashboardCache, auditLogger, logger);
+export const referralFacade = new ReferralFacade(
+  repository,
+  dashboardCache,
+  auditLogger,
+  referralEvents,
+  logger
+);
 
 // === Rate Limiters ===
 const referralCreateLimiter = rateLimit({
